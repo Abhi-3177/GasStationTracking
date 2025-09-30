@@ -1,0 +1,134 @@
+import { DayBookRecord, DailyRecordData } from './daybook';
+
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
+
+export type Database = {
+  public: {
+    Tables: {
+      accounts: {
+        Row: {
+          id: string
+          name: string
+          type: "factory" | "transporter"
+          contact: string | null
+          address: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          type?: "factory" | "transporter"
+          contact?: string | null
+          address?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          type?: "factory" | "transporter"
+          contact?: string | null
+          address?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      balance_entries: {
+        Row: {
+          id: string
+          account_id: string
+          date: string
+          description: string
+          type: "credit" | "debit"
+          amount: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          account_id: string
+          date: string
+          description: string
+          type: "credit" | "debit"
+          amount: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          account_id?: string
+          date?: string
+          description?: string
+          type?: "credit" | "debit"
+          amount?: number
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "balance_entries_account_id_fkey"
+            columns: ["account_id"]
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      day_book_records: {
+        Row: {
+          date: string
+          record: Json | DayBookRecord
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          date: string
+          record: Json | DayBookRecord
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          date?: string
+          record?: Json | DayBookRecord
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      daily_records: {
+        Row: {
+          date: string
+          record: Json | DailyRecordData
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          date: string
+          record: Json | DailyRecordData
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          date?: string
+          record?: Json | DailyRecordData
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      [_ in never]: never
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
+}
