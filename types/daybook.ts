@@ -8,28 +8,34 @@ export interface MachineReading {
 export interface CreditSale {
   id: string;
   name: string;
+  accountId?: string;
   litres: number;
   fuelType: 'petrol' | 'diesel';
   amount: number;
   lastEdited: 'litres' | 'amount';
+  vehicleNumber?: string;
 }
 
 export interface SviSale {
   id: string;
   name: string;
+  accountId?: string;
   litres: number;
   fuelType: 'petrol' | 'diesel';
   amount: number;
   lastEdited: 'litres' | 'amount';
+  vehicleNumber?: string;
 }
 
 export interface Sale0332 {
   id: string;
   name: string;
+  accountId?: string;
   litres: number;
   fuelType: 'petrol' | 'diesel';
   amount: number;
   lastEdited: 'litres' | 'amount';
+  vehicleNumber?: string;
 }
 
 export interface GasCommission {
@@ -88,4 +94,100 @@ export interface CalculatedTotals {
   netSale: number;
   totalPayments: number;
   dayBalance: number;
+}
+
+// New types for Daily Record functionality
+export interface BalanceEntry {
+  id: string;
+  date: string;
+  description: string;
+  type: 'credit' | 'debit'; // credit = advance from customer, debit = outstanding balance
+  amount: number;
+}
+
+export interface Account {
+  id: string;
+  user_id: string;
+  name: string;
+  type: 'factory' | 'transporter';
+  contact?: string;
+  address?: string;
+  balanceEntries: BalanceEntry[];
+  createdAt: string;
+}
+
+export interface BankEntry {
+  expected: number;
+  actual: number;
+  settled: boolean;
+}
+
+export interface CreditSalesRecordEntry {
+  id: string;
+  accountId: string;
+  vehicleNumber?: string;
+  litres: number;
+  fuelType: 'petrol' | 'diesel';
+  amount: number;
+  settled: boolean;
+  settledDate?: string;
+}
+
+export interface CommissionEntry {
+  id: string;
+  type: 'gas' | 'veneer';
+  description: string;
+  amount: number;
+  date: string;
+}
+
+export interface ExpenseEntry {
+  id: string;
+  category: 'gas' | 'veneer' | 'other';
+  description: string;
+  amount: number;
+  date: string;
+}
+
+export interface CashInHandEntry {
+  id: string;
+  accountId: string;
+  amount: number;
+  date: string;
+  transactionId?: string;
+  reconciled: boolean;
+}
+
+export interface SaleByVehicleEntry {
+  id: string;
+  accountId: string;
+  vehicleNumber?: string;
+  litres: number;
+  amount: number;
+  reconciled: boolean;
+}
+
+export interface DailyRecordData {
+  date: string;
+  bankEntries: {
+    atmSale: BankEntry;
+    phonePeSale: BankEntry;
+    paytmSale: BankEntry;
+    cashDeposit: BankEntry;
+  };
+  creditSales: CreditSalesRecordEntry[];
+  commissionPaid: CommissionEntry[];
+  expenses: ExpenseEntry[];
+  cashInHand: CashInHandEntry[];
+  saleByVehicle0332: SaleByVehicleEntry[];
+}
+
+// Validation types
+export interface ValidationResult {
+  isValid: boolean;
+  differences: {
+    fuelDistribution?: number;
+    creditSales?: number;
+    sale0332?: number;
+  };
 }

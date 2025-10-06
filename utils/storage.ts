@@ -1,13 +1,25 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DayBookRecord } from '../types/daybook';
+import { DayBookRecord, DailyRecordData, Account } from '../types/daybook';
 import { format, subDays } from 'date-fns';
 
 const STORAGE_PREFIX = 'daybook_';
+const DAILY_RECORD_PREFIX = 'daily_record_';
+const ACCOUNT_PREFIX = 'account_';
+const ACCOUNTS_LIST_KEY = 'accounts_list';
 
 export function getStorageKey(date: string): string {
   return `${STORAGE_PREFIX}${date}`;
 }
 
+export function getDailyRecordKey(date: string): string {
+  return `${DAILY_RECORD_PREFIX}${date}`;
+}
+
+export function getAccountKey(accountId: string): string {
+  return `${ACCOUNT_PREFIX}${accountId}`;
+}
+
+// Day Book functions (existing)
 export async function saveRecord(record: DayBookRecord): Promise<void> {
   const key = getStorageKey(record.date);
   await AsyncStorage.setItem(key, JSON.stringify(record));
@@ -52,4 +64,106 @@ export async function getAllRecords(): Promise<DayBookRecord[]> {
 export async function deleteRecord(date: string): Promise<void> {
   const key = getStorageKey(date);
   await AsyncStorage.removeItem(key);
+}
+
+// Daily Record functions (new)
+export async function saveDailyRecord(record: DailyRecordData): Promise<void> {
+  const key = getDailyRecordKey(record.date);
+  await AsyncStorage.setItem(key, JSON.stringify(record));
+}
+
+export async function getDailyRecord(date: string): Promise<DailyRecordData | null> {
+  try {
+    const key = getDailyRecordKey(date);
+    const data = await AsyncStorage.getItem(key);
+    return data ? JSON.parse(data) : null;
+  } catch (error) {
+    console.error('Error getting daily record:', error);
+    return null;
+  }
+}
+
+export async function getAllDailyRecords(): Promise<DailyRecordData[]> {
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    const dailyRecordKeys = keys.filter(key => key.startsWith(DAILY_RECORD_PREFIX));
+    
+    const records: DailyRecordData[] = [];
+    for (const key of dailyRecordKeys) {
+      const data = await AsyncStorage.getItem(key);
+      if (data) {
+        records.push(JSON.parse(data));
+      }
+    }
+    
+    return records;
+  } catch (error) {
+    console.error('Error getting all daily records:', error);
+    return [];
+  }
+}
+
+export async function deleteDailyRecord(date: string): Promise<void> {
+  const key = getDailyRecordKey(date);
+  await AsyncStorage.removeItem(key);
+}
+
+// Account functions (new)
+export async function saveAccount(account: Account): Promise<void> {
+  const key = getAccountKey(account.id);
+  await AsyncStorage.setItem(key, JSON.stringify(account));
+  
+  // Update accounts list
+  const accountsList = await getAllAccounts();
+  const existingIndex = accountsList.findIndex(a => a.id === account.id);
+  
+  if (existingIndex >= 0) {
+    accountsList[existingIndex] = account;
+  } else {
+    accountsList.push(account);
+  }
+  
+  await AsyncStorage.setItem(ACCOUNTS_LIST_KEY, JSON.stringify(accountsList.map(a => a.id)));
+}
+
+export async function getAccount(accountId: string): Promise<Account | null> {
+  try {
+    const key = getAccountKey(accountId);
+    const data = await AsyncStorage.getItem(key);
+    return data ? JSON.parse(data) : null;
+  } catch (error) {
+    console.error('Error getting account:', error);
+    return null;
+  }
+}
+
+export async function getAllAccounts(): Promise<Account[]> {
+  try {
+    const accountsListData = await AsyncStorage.getItem(ACCOUNTS_LIST_KEY);
+    const accountIds: string[] = accountsListData ? JSON.parse(accountsListData) : [];
+    
+    const accounts: Account[] = [];
+    for (const accountId of accountIds) {
+      const account = await getAccount(accountId);
+      if (account) {
+        accounts.push(account);
+      }
+    }
+    
+    return accounts.sort((a, b) => a.name.localeCompare(b.name));
+  } catch (error) {
+    console.error('Error getting all accounts:', error);
+    return [];
+  }
+}
+
+export async function deleteAccount(accountId: string): Promise<void> {
+  const key = getAccountKey(accountId);
+  await AsyncStorage.removeItem(key);
+  
+  // Update accounts list
+  const accountsListData = await AsyncStorage.getItem(ACCOUNTS_LIST_KEY);
+  const accountIds: string[] = accountsListData ? JSON.parse(accountsListData) : [];
+  const updatedIds = accountIds.filter(id => id !== accountId);
+  await AsyncStorage.setItem(ACCOUNTS_LIST_KEY, JSON.stringify(updatedIds));
 }

@@ -1,19 +1,21 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
-import { Minus, Plus, Trash2 } from 'lucide-react-native';
+import { Minus, Plus, Trash2, AlertTriangle } from 'lucide-react-native';
 import { Card } from './Card';
 import { NumberInput } from './NumberInput';
-import { CreditSale, SviSale, Sale0332, DayBookRecord } from '../types/daybook';
+import { AccountAutocomplete } from './AccountAutocomplete';
+import { CreditSale, SviSale, Sale0332, DayBookRecord, Account } from '../types/daybook';
 import { CalculatedTotals } from '../types/daybook';
 
 interface DeductionsSectionProps {
   prices: DayBookRecord['prices'];
   deductions: DayBookRecord['deductions'];
   totals: CalculatedTotals;
+  accounts: Account[];
   onUpdateDeductions: (deductions: DayBookRecord['deductions']) => void;
 }
 
-export function DeductionsSection({ prices, deductions, totals, onUpdateDeductions }: DeductionsSectionProps) {
+export function DeductionsSection({ prices, deductions, totals, accounts, onUpdateDeductions }: DeductionsSectionProps) {
 
   // This effect recalculates the dependent value (litres or amount) whenever the master prices change.
   useEffect(() => {
@@ -56,6 +58,14 @@ export function DeductionsSection({ prices, deductions, totals, onUpdateDeductio
     }
   }, [prices]);
 
+  // Calculate fuel distribution validation
+  const totalDistributedLitres = 
+    (deductions.sviSales || []).reduce((total, sale) => total + (sale.litres || 0), 0) +
+    (deductions.sales0332 || []).reduce((total, sale) => total + (sale.litres || 0), 0) +
+    (deductions.creditSales || []).reduce((total, sale) => total + (sale.litres || 0), 0);
+  
+  const totalSoldLitres = (totals.petrolLitres || 0) + (totals.dieselLitres || 0);
+  const distributionMismatch = Math.abs(totalDistributedLitres - totalSoldLitres) > 0.01;
 
   const updateSale = (
     type: 'sviSales' | 'sales0332' | 'creditSales',
@@ -74,9 +84,10 @@ export function DeductionsSection({ prices, deductions, totals, onUpdateDeductio
       id: Date.now().toString(),
       name: '',
       litres: 0,
-      fuelType: 'petrol',
+      fuelType: 'diesel',
       amount: 0,
       lastEdited: 'litres',
+      vehicleNumber: '',
     };
     onUpdateDeductions({ ...deductions, sviSales: [...deductions.sviSales, newSviSale] });
   };
@@ -88,9 +99,10 @@ export function DeductionsSection({ prices, deductions, totals, onUpdateDeductio
       id: Date.now().toString(),
       name: '',
       litres: 0,
-      fuelType: 'petrol',
+      fuelType: 'diesel',
       amount: 0,
       lastEdited: 'litres',
+      vehicleNumber: '',
     };
     onUpdateDeductions({ ...deductions, sales0332: [...deductions.sales0332, newSale0332] });
   };
@@ -102,9 +114,10 @@ export function DeductionsSection({ prices, deductions, totals, onUpdateDeductio
       id: Date.now().toString(),
       name: '',
       litres: 0,
-      fuelType: 'petrol',
+      fuelType: 'diesel',
       amount: 0,
       lastEdited: 'litres',
+      vehicleNumber: '',
     };
     onUpdateDeductions({ ...deductions, creditSales: [...deductions.creditSales, newCreditSale] });
   };
@@ -139,51 +152,117 @@ export function DeductionsSection({ prices, deductions, totals, onUpdateDeductio
       updateSale(type, sale.id, updates);
     };
 
+    const useAutocomplete = type === 'creditSales' || type === 'sales0332';
+
     return (
       <View key={sale.id} style={styles.saleRow}>
-        <TextInput style={[styles.textInput, styles.flex2]} value={sale.name} onChangeText={name => updateSale(type, sale.id, { name })} placeholder={placeholder} />
+        <View style={styles.flex2}>
+          {useAutocomplete ? (
+            <AccountAutocomplete
+              accounts={accounts}
+              value={sale.name}
+              onValueChange={name => updateSale(type, sale.id, { name, accountId: undefined })}
+              onAccountSelect={account => updateSale(type, sale.id, { name: account.name, accountId: account.id })}
+              placeholder={placeholder}
+            />
+          ) : (
+            <TextInput 
+              style={styles.textInput} 
+              value={sale.name} 
+              onChangeText={name => updateSale(type, sale.id, { name })} 
+              placeholder={placeholder} 
+            />
+          )}
+        </View>
         
         <View style={styles.flex1}>
-          <NumberInput value={sale.litres} onChangeValue={handleLitresChange} placeholder="Litres" precision={2} style={sale.lastEdited === 'amount' ? styles.autoCalculatedInput : null} />
+          <TextInput 
+            style={styles.textInput} 
+            value={sale.vehicleNumber || ''} 
+            onChangeText={vehicleNumber => updateSale(type, sale.id, { vehicleNumber })} 
+            placeholder="Vehicle No" 
+          />
+        </View>
+        
+        <View style={styles.flex1}>
+          <NumberInput 
+            value={sale.litres} 
+            onChangeValue={handleLitresChange} 
+            placeholder="Litres" 
+            precision={2} 
+            style={sale.lastEdited === 'amount' ? styles.autoCalculatedInput : null} 
+          />
         </View>
 
         <View style={styles.fuelTypeSelector}>
-          <TouchableOpacity style={[styles.fuelTypeButton, sale.fuelType === 'petrol' && styles.fuelTypeActive]} onPress={() => handleFuelTypeChange('petrol')}>
+          <TouchableOpacity 
+            style={[styles.fuelTypeButton, sale.fuelType === 'petrol' && styles.fuelTypeActive]} 
+            onPress={() => handleFuelTypeChange('petrol')}
+          >
             <Text style={[styles.fuelTypeText, sale.fuelType === 'petrol' && styles.fuelTypeActiveText]}>P</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.fuelTypeButton, sale.fuelType === 'diesel' && styles.fuelTypeActive]} onPress={() => handleFuelTypeChange('diesel')}>
+          <TouchableOpacity 
+            style={[styles.fuelTypeButton, sale.fuelType === 'diesel' && styles.fuelTypeActive]} 
+            onPress={() => handleFuelTypeChange('diesel')}
+          >
             <Text style={[styles.fuelTypeText, sale.fuelType === 'diesel' && styles.fuelTypeActiveText]}>D</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.flex1}>
-          <NumberInput value={sale.amount} onChangeValue={handleAmountChange} placeholder="Amount" precision={3} style={sale.lastEdited === 'litres' ? styles.autoCalculatedInput : null} />
+          <NumberInput 
+            value={sale.amount} 
+            onChangeValue={handleAmountChange} 
+            placeholder="Amount" 
+            precision={0} 
+            style={sale.lastEdited === 'litres' ? styles.autoCalculatedInput : null} 
+          />
         </View>
 
-        <TouchableOpacity onPress={() => removeFn(sale.id)} style={styles.removeButton}><Trash2 size={16} color="#dc2626" /></TouchableOpacity>
+        <TouchableOpacity onPress={() => removeFn(sale.id)} style={styles.removeButton}>
+          <Trash2 size={16} color="#dc2626" />
+        </TouchableOpacity>
       </View>
     );
   };
 
   return (
     <Card>
-      <View style={styles.header}><Minus size={20} color="#dc2626" /><Text style={styles.title}>Deductions from Total Sale</Text></View>
+      <View style={styles.header}>
+        <Minus size={20} color="#dc2626" />
+        <Text style={styles.title}>Deductions from Total Sale</Text>
+      </View>
+      
+      {distributionMismatch && (
+        <View style={styles.validationWarning}>
+          <AlertTriangle size={16} color="#f59e0b" />
+          <Text style={styles.validationText}>
+            Sold {totalSoldLitres.toFixed(2)}L, Distributed {totalDistributedLitres.toFixed(2)}L
+          </Text>
+        </View>
+      )}
       
       <Section title="SVI Sales" onAdd={addSviSale}>
-        {deductions.sviSales.map(svi => renderLitreBasedSale(svi, 'sviSales', removeSviSale, "SVI sale description"))}
+        {(deductions.sviSales || []).map(svi => renderLitreBasedSale(svi, 'sviSales', removeSviSale, "SVI sale description"))}
       </Section>
 
       <Section title="0332 Sales" onAdd={addSale0332}>
-        {deductions.sales0332.map(sale => renderLitreBasedSale(sale, 'sales0332', removeSale0332, "0332 sale description"))}
+        {(deductions.sales0332 || []).map(sale => renderLitreBasedSale(sale, 'sales0332', removeSale0332, "0332 Account Name"))}
       </Section>
       
       <Section title="Credit Sales" onAdd={addCreditSale}>
-        {deductions.creditSales.map(credit => renderLitreBasedSale(credit, 'creditSales', removeCreditSale, "Company/Transporter name"))}
+        {(deductions.creditSales || []).map(credit => renderLitreBasedSale(credit, 'creditSales', removeCreditSale, "Company/Transporter name"))}
       </Section>
       
       <View style={styles.summarySection}>
-        <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Total Deductions:</Text><Text style={styles.summaryValue}>₹{totals.totalDeductions.toFixed(2)}</Text></View>
-        <View style={[styles.summaryRow, styles.cashSaleRow]}><Text style={styles.cashSaleLabel}>Cash Sale:</Text><Text style={styles.cashSaleValue}>₹{totals.cashSale.toFixed(2)}</Text></View>
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Total Deductions:</Text>
+          <Text style={styles.summaryValue}>₹{(totals.totalDeductions || 0).toFixed(2)}</Text>
+        </View>
+        <View style={[styles.summaryRow, styles.cashSaleRow]}>
+          <Text style={styles.cashSaleLabel}>Cash Sale:</Text>
+          <Text style={styles.cashSaleValue}>₹{(totals.cashSale || 0).toFixed(2)}</Text>
+        </View>
       </View>
     </Card>
   );
@@ -193,7 +272,10 @@ const Section = ({ title, onAdd, children }: { title: string, onAdd: () => void,
   <View style={styles.salesSection}>
     <View style={styles.salesHeader}>
       <Text style={styles.sectionTitle}>{title}</Text>
-      <TouchableOpacity onPress={onAdd} style={styles.addButton}><Plus size={16} color="#ffffff" /><Text style={styles.addButtonText}>Add</Text></TouchableOpacity>
+      <TouchableOpacity onPress={onAdd} style={styles.addButton}>
+        <Plus size={16} color="#ffffff" />
+        <Text style={styles.addButtonText}>Add</Text>
+      </TouchableOpacity>
     </View>
     {children}
   </View>
@@ -202,6 +284,23 @@ const Section = ({ title, onAdd, children }: { title: string, onAdd: () => void,
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
   title: { fontSize: 18, fontWeight: '600', color: '#1f2937' },
+  validationWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fef3c7',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#f59e0b',
+  },
+  validationText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#92400e',
+    fontWeight: '500',
+  },
   salesSection: { marginBottom: 16 },
   salesHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   sectionTitle: { fontSize: 16, fontWeight: '600', color: '#374151' },

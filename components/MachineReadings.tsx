@@ -11,9 +11,10 @@ interface MachineReadingsProps {
     diesel: MachineReading[];
   };
   onUpdateMachine: (type: 'petrol' | 'diesel', id: string, updates: Partial<MachineReading>) => void;
+  isOpeningEditable: boolean;
 }
 
-export function MachineReadings({ machines, onUpdateMachine }: MachineReadingsProps) {
+export function MachineReadings({ machines, onUpdateMachine, isOpeningEditable }: MachineReadingsProps) {
   const renderMachine = (machine: MachineReading, type: 'petrol' | 'diesel') => {
     const litresSold = Math.max(0, machine.closingReading - machine.openingReading);
     
@@ -28,8 +29,8 @@ export function MachineReadings({ machines, onUpdateMachine }: MachineReadingsPr
               value={machine.openingReading}
               onChangeValue={(value) => onUpdateMachine(type, machine.id, { openingReading: value })}
               placeholder="0"
-              style={styles.disabledInput}
-              editable={false}
+              style={!isOpeningEditable ? styles.disabledInput : null}
+              editable={isOpeningEditable}
             />
           </View>
           

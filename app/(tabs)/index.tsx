@@ -3,7 +3,6 @@ import { ScrollView, View, StyleSheet, Alert, Platform, Text } from 'react-nativ
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { format } from 'date-fns';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Header } from '../../components/Header';
 import { DateSelector } from '../../components/DateSelector';
 import { AutoCarryForwardCard } from '../../components/AutoCarryForwardCard';
 import { MachineReadings } from '../../components/MachineReadings';
@@ -13,9 +12,9 @@ import { ExpensesSection } from '../../components/ExpensesSection';
 import { PaymentSettlement } from '../../components/PaymentSettlement';
 import { SummaryCard } from '../../components/SummaryCard';
 import { SaveButton } from '../../components/SaveButton';
-import { DayBookRecord, MachineReading } from '../../types/daybook';
+import { DayBookRecord, MachineReading, Account } from '../../types/daybook';
 import { calculateTotals } from '../../utils/calculations';
-import { getStorageKey, saveRecord, getRecord, getPreviousRecord } from '../../utils/storage';
+import { saveRecord, getRecord, getPreviousRecord, getAllAccounts } from '../../utils/database';
 
 const DEFAULT_OPENING_READINGS = {
   petrol: [697397.11, 108734.96, 556516.9, 255356.06],
@@ -40,7 +39,7 @@ const createNewRecord = (dateKey: string, previousRecord: DayBookRecord | null):
   },
   prices: { petrol: 0, diesel: 0 },
   deductions: { sviSales: [], sales0332: [], creditSales: [] },
-  expenses: { gasCommissions: [], additionalExpenses: [], gasTesting: { petrolTestLitres: 0, dieselTestLitres: 0 } },
+  expenses: { gasCommissions: [], additionalExpenses: [], gasTesting: { petrolTestLitres: 10, dieselTestLitres: 20 } },
   payments: { atmSale: 0, phonePeSale: 0, paytmSale: 0, cashDeposit: 0 },
 });
 
@@ -53,6 +52,7 @@ export default function DayBookScreen() {
     petrol: MachineReading[];
     diesel: MachineReading[];
   } | null>(null);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Effect to handle date changes from router params (e.g., from History tab)
@@ -80,8 +80,11 @@ export default function DayBookScreen() {
     const dateKey = format(date, 'yyyy-MM-dd');
     
     try {
-      const existingRecord = await getRecord(dateKey);
-      const previousRecord = await getPreviousRecord(dateKey);
+      const [existingRecord, previousRecord, allAccounts] = await Promise.all([
+        getRecord(dateKey),
+        getPreviousRecord(dateKey),
+        getAllAccounts(),
+      ]);
       
       if (existingRecord) {
         setRecord(existingRecord);
@@ -89,6 +92,7 @@ export default function DayBookScreen() {
         setRecord(createNewRecord(dateKey, previousRecord));
       }
       setPreviousDayMachines(previousRecord?.machines || null);
+      setAccounts(allAccounts);
     } catch (error) {
       console.error('Error loading record:', error);
       Alert.alert('Error', 'Could not load record for the selected date.');
@@ -121,7 +125,7 @@ export default function DayBookScreen() {
     if (!record) return;
     try {
       await saveRecord(record);
-      Alert.alert('Success', 'Day book record saved successfully!');
+      Alert.alert('Success', 'Day book record saved successfully to the database!');
     } catch (error) {
       Alert.alert('Error', 'Failed to save record. Please try again.');
     }
@@ -131,7 +135,6 @@ export default function DayBookScreen() {
     return (
       <SafeAreaProvider>
         <SafeAreaView style={styles.container}>
-          <Header />
           <View style={styles.loadingContainer}>
             <Text style={styles.loadingText}>Loading Record...</Text>
           </View>
@@ -145,7 +148,6 @@ export default function DayBookScreen() {
   return (
     <SafeAreaProvider>
       <SafeAreaView style={styles.container}>
-        <Header />
         <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
           <View style={styles.content}>
             <DateSelector 
@@ -160,6 +162,7 @@ export default function DayBookScreen() {
             <MachineReadings 
               machines={record.machines}
               onUpdateMachine={updateMachineReading}
+              isOpeningEditable={!previousDayMachines}
             />
 
             <SalesSection 
@@ -172,6 +175,7 @@ export default function DayBookScreen() {
               prices={record.prices}
               deductions={record.deductions}
               totals={totals}
+              accounts={accounts}
               onUpdateDeductions={(deductions) => updateRecord({ deductions })}
             />
 

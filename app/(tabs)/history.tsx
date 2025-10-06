@@ -4,19 +4,19 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { format } from 'date-fns';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Calendar as RNCalendar, DateData } from 'react-native-calendars';
-import { Calendar, Edit, Trash2 } from 'lucide-react-native';
+import { Calendar, Edit, Trash2, ChevronDown, ChevronUp } from 'lucide-react-native';
 
-import { Header } from '../../components/Header';
 import { Card } from '../../components/Card';
 import { DayBookRecord } from '../../types/daybook';
 import { calculateTotals } from '../../utils/calculations';
-import { getAllRecords, deleteRecord } from '../../utils/storage';
+import { getAllRecords, deleteRecord } from '../../utils/database';
 
 export default function HistoryScreen() {
   const router = useRouter();
   const [records, setRecords] = useState<DayBookRecord[]>([]);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [isLoading, setIsLoading] = useState(true);
+  const [isCalendarVisible, setIsCalendarVisible] = useState(true);
 
   useFocusEffect(
     useCallback(() => {
@@ -32,7 +32,7 @@ export default function HistoryScreen() {
       setRecords(allRecords);
     } catch (error) {
       console.error('Error loading records:', error);
-      Alert.alert('Error', 'Failed to load records.');
+      Alert.alert('Error', 'Failed to load records from the database.');
     } finally {
       setIsLoading(false);
     }
@@ -123,26 +123,37 @@ export default function HistoryScreen() {
   return (
     <SafeAreaProvider>
       <SafeAreaView style={styles.container}>
-        <Header title="History & Date Selection" />
         <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
           <View style={styles.content}>
             <Card>
-              <RNCalendar
-                current={selectedDate}
-                onDayPress={onDayPress}
-                markedDates={markedDates}
-                theme={{
-                  todayTextColor: '#2563eb',
-                  arrowColor: '#2563eb',
-                  'stylesheet.calendar.header': { week: { marginTop: 5, flexDirection: 'row', justifyContent: 'space-between' } }
-                }}
-              />
-              <TouchableOpacity style={styles.editButton} onPress={handleEditSelectedDate}>
-                <Edit size={18} color="#ffffff" />
-                <Text style={styles.editButtonText}>
-                  View / Edit {format(new Date(selectedDate), 'MMM d')}
-                </Text>
+              <TouchableOpacity style={styles.collapsibleHeader} onPress={() => setIsCalendarVisible(!isCalendarVisible)}>
+                <View style={styles.collapsibleTitleContainer}>
+                    <Calendar size={20} color="#1f2937" />
+                    <Text style={styles.collapsibleTitle}>Calendar & Date Selection</Text>
+                </View>
+                {isCalendarVisible ? <ChevronUp size={24} color="#2563eb" /> : <ChevronDown size={24} color="#2563eb" />}
               </TouchableOpacity>
+
+              {isCalendarVisible && (
+                <View style={styles.calendarContainer}>
+                    <RNCalendar
+                        current={selectedDate}
+                        onDayPress={onDayPress}
+                        markedDates={markedDates}
+                        theme={{
+                        todayTextColor: '#2563eb',
+                        arrowColor: '#2563eb',
+                        'stylesheet.calendar.header': { week: { marginTop: 5, flexDirection: 'row', justifyContent: 'space-between' } }
+                        }}
+                    />
+                    <TouchableOpacity style={styles.editButton} onPress={handleEditSelectedDate}>
+                        <Edit size={18} color="#ffffff" />
+                        <Text style={styles.editButtonText}>
+                        View / Edit {format(new Date(selectedDate), 'MMM d')}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+              )}
             </Card>
 
             <View style={styles.recordsHeader}>
@@ -179,6 +190,27 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 16,
     paddingBottom: 32,
+  },
+  collapsibleHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  collapsibleTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  collapsibleTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  calendarContainer: {
+    paddingTop: 16,
+    marginTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
   },
   editButton: {
     flexDirection: 'row',
