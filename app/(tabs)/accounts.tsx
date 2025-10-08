@@ -8,7 +8,7 @@ import { Card } from '../../components/Card';
 import { AccountForm } from '../../components/AccountForm';
 import { AccountLedger } from '../../components/AccountLedger';
 import { Account, BalanceEntry } from '../../types/daybook';
-import { getAllAccounts, saveAccount, deleteAccount } from '../../utils/database';
+import { getAllAccounts, saveAccount, deleteAccount } from '../../utils/database'; // <-- Switched to database
 
 export default function AccountsScreen() {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -29,18 +29,19 @@ export default function AccountsScreen() {
     try {
       const accountsList = await getAllAccounts();
       setAccounts(accountsList);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading accounts:', error);
-      Alert.alert('Error', 'Failed to load accounts from the database.');
+      Alert.alert('Error', error.message || 'Failed to load accounts.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleSaveAccount = async (accountData: Omit<Account, 'id' | 'createdAt'> & { balanceEntries: BalanceEntry[] }) => {
+  const handleSaveAccount = async (accountData: Omit<Account, 'id' | 'createdAt' | 'user_id'>) => {
     try {
       const account: Account = {
-        id: editingAccount?.id || Date.now().toString(), // Note: Supabase will generate UUID if not provided
+        id: editingAccount?.id || `new_${Date.now()}`, // Use a temporary ID for new accounts
+        user_id: '', // This will be handled by the database function
         ...accountData,
         createdAt: editingAccount?.createdAt || new Date().toISOString(),
       };
@@ -50,8 +51,9 @@ export default function AccountsScreen() {
       setShowForm(false);
       setEditingAccount(null);
       Alert.alert('Success', `Account ${editingAccount ? 'updated' : 'created'} successfully!`);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to save account to the database.');
+    } catch (error: any) {
+      console.error('Error saving account:', error);
+      Alert.alert('Error', error.message || 'Failed to save account.');
     }
   };
 
@@ -74,8 +76,9 @@ export default function AccountsScreen() {
               await deleteAccount(account.id);
               await loadAccounts();
               Alert.alert('Success', 'Account deleted successfully!');
-            } catch (error) {
-              Alert.alert('Error', 'Failed to delete account.');
+            } catch (error: any) {
+              console.error('Error deleting account:', error);
+              Alert.alert('Error', error.message || 'Failed to delete account.');
             }
           },
         },
@@ -90,7 +93,7 @@ export default function AccountsScreen() {
 
   const renderAccountCard = (account: Account) => {
     const openingBalance = account.balanceEntries.reduce((acc, entry) => {
-        return acc + (entry.type === 'credit' ? entry.amount : -entry.amount);
+        return acc + (entry.type === 'debit' ? entry.amount : -entry.amount);
     }, 0);
 
     return (
@@ -133,9 +136,9 @@ export default function AccountsScreen() {
             <Text style={styles.balanceLabel}>Opening Balance:</Text>
             <Text style={[
             styles.balanceValue,
-            openingBalance < 0 && styles.negativeBalance
+            openingBalance > 0 ? styles.negativeBalance : styles.positiveBalance
             ]}>
-            ₹{openingBalance.toFixed(2)}
+            ₹{Math.abs(openingBalance).toFixed(2)}
             </Text>
         </View>
         </Card>
@@ -403,6 +406,9 @@ const styles = StyleSheet.create({
   balanceValue: {
     fontSize: 16,
     fontWeight: '700',
+    color: '#059669',
+  },
+  positiveBalance: {
     color: '#059669',
   },
   negativeBalance: {

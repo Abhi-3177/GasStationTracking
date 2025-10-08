@@ -2,36 +2,58 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Link, useRouter } from 'expo-router';
-import { Fuel, User, Mail, Lock, Eye, EyeOff } from 'lucide-react-native';
+import { Fuel, Mail, Lock, Eye, EyeOff } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 
 export default function SignUpScreen() {
   const router = useRouter();
-  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   const handleSignUp = async () => {
-    setIsLoading(true);
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
-        },
-      },
-    });
-
-    if (error) {
-      Alert.alert('Sign Up Failed', error.message);
-    } else {
-      Alert.alert('Success', 'Please check your email to confirm your account.');
-      router.replace('/(auth)/login');
+    if (!email.trim() || !password) {
+      Alert.alert('Missing Information', 'Please fill out all fields.');
+      return;
     }
-    setIsLoading(false);
+
+    setIsLoading(true);
+    const trimmedEmail = email.trim();
+    console.log('Attempting to sign up with email:', trimmedEmail);
+
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: trimmedEmail, // Use the trimmed email
+        password,
+      });
+
+      console.log('Supabase signUp response:', { data, error });
+
+      if (error) {
+        console.error('Sign up failed with Supabase error:', error);
+        if (error.message.includes("User already registered")) {
+            Alert.alert('Sign Up Failed', 'An account with this email address already exists. Please log in instead.');
+        } else {
+            Alert.alert('Sign Up Failed', `[Code: ${error.code || 'Unknown'}] ${error.message}`);
+        }
+      } else {
+        Alert.alert(
+          'Sign Up Initiated',
+          'Your account has been created. If email confirmation is required, please check your inbox to complete the process.'
+        );
+        router.replace('/(auth)/login');
+      }
+    } catch (e: any) {
+      console.error('An unexpected exception occurred during sign up:', e);
+      Alert.alert(
+        'Unexpected Error',
+        e.message || 'An unknown error occurred. Please check the console for more details.'
+      );
+    } finally {
+      console.log('Sign up process finished.');
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -44,17 +66,6 @@ export default function SignUpScreen() {
         </View>
 
         <View style={styles.form}>
-          <View style={styles.inputContainer}>
-            <User size={20} color="#9ca3af" style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Full Name"
-              value={fullName}
-              onChangeText={setFullName}
-              autoCapitalize="words"
-            />
-          </View>
-
           <View style={styles.inputContainer}>
             <Mail size={20} color="#9ca3af" style={styles.inputIcon} />
             <TextInput

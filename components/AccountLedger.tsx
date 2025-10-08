@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { ScrollView, View, Text, StyleSheet, ActivityIndicator } from 'react-native';
-import { Calendar, TrendingUp, TrendingDown } from 'lucide-react-native';
+import { Calendar, TrendingDown, TrendingUp } from 'lucide-react-native';
 import { format } from 'date-fns';
 import { Account } from '../types/daybook';
-import { getAccount, getAllDailyRecords, getAllRecords } from '../utils/database';
+import { getAccount, getAllRecords, getPaymentsForAccount } from '../utils/database';
+import { useAuth } from '../context/AuthContext';
 
 interface AccountLedgerProps {
   accountId: string;
@@ -11,7 +12,7 @@ interface AccountLedgerProps {
 
 interface LedgerEntry {
   date: string;
-  type: 'credit_sale' | 'cash_received' | '0332_sale' | 'opening_balance';
+  type: 'credit_sale' | '0332_sale' | 'opening_balance' | 'payment_received';
   description: string;
   debit: number;
   credit: number;
@@ -19,21 +20,24 @@ interface LedgerEntry {
 }
 
 export function AccountLedger({ accountId }: AccountLedgerProps) {
+  const { session } = useAuth();
   const [account, setAccount] = useState<Account | null>(null);
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    loadLedgerData();
-  }, [accountId]);
+    if (session) {
+        loadLedgerData();
+    }
+  }, [accountId, session]);
 
   const loadLedgerData = async () => {
     setIsLoading(true);
     try {
-      const [accountData, dailyRecords, dayBookRecords] = await Promise.all([
+      const [accountData, dayBookRecords, paymentsReceived] = await Promise.all([
         getAccount(accountId),
-        getAllDailyRecords(),
-        getAllRecords()
+        getAllRecords(),
+        getPaymentsForAccount(accountId),
       ]);
 
       if (!accountData) {
@@ -48,55 +52,56 @@ export function AccountLedger({ accountId }: AccountLedgerProps) {
       // 1. Add initial balance entries
       for (const entry of accountData.balanceEntries || []) {
         allEntries.push({
-            date: entry.date,
-            sortDate: new Date(entry.date),
-            type: 'opening_balance',
-            description: `Opening Balance: ${entry.description}`,
-            debit: entry.type === 'debit' ? entry.amount : 0,
-            credit: entry.type === 'credit' ? entry.amount : 0,
+          date: entry.date,
+          sortDate: new Date(entry.date),
+          type: 'opening_balance',
+          description: `Opening Balance: ${entry.description}`,
+          debit: entry.type === 'debit' ? entry.amount : 0,
+          credit: entry.type === 'credit' ? entry.amount : 0,
         });
       }
-      
-      // 2. Collect all transaction dates
-      const allTransactionDates = new Set<string>();
-      dailyRecords.forEach(r => allTransactionDates.add(r.date));
-      dayBookRecords.forEach(r => allTransactionDates.add(r.date));
-      
-      // 3. Add transaction entries from DayBook and DailyRecord
-      for (const date of allTransactionDates) {
-        const dayBook = dayBookRecords.find(r => r.date === date);
-        const dailyRecord = dailyRecords.find(r => r.date === date);
-        const sortDate = new Date(date);
 
-        // From DayBook - use accountId for accurate filtering
-        if (dayBook) {
-          (dayBook.deductions.creditSales || []).filter(sale => sale.accountId === accountId).forEach(sale => {
+      // 2. Add transaction entries from DayBook records
+      for (const dayBook of dayBookRecords) {
+        const sortDate = new Date(dayBook.date);
+
+        (dayBook.deductions.creditSales || [])
+          .filter(sale => sale.accountId === accountId)
+          .forEach(sale => {
             allEntries.push({
-              date, sortDate, type: 'credit_sale',
+              date: dayBook.date,
+              sortDate,
+              type: 'credit_sale',
               description: `Credit Sale - ${sale.litres.toFixed(2)}L ${sale.fuelType}`,
-              debit: sale.amount, credit: 0,
+              debit: sale.amount,
+              credit: 0,
             });
           });
 
-          (dayBook.deductions.sales0332 || []).filter(sale => sale.accountId === accountId).forEach(sale => {
+        (dayBook.deductions.sales0332 || [])
+          .filter(sale => sale.accountId === accountId)
+          .forEach(sale => {
             allEntries.push({
-              date, sortDate, type: '0332_sale',
+              date: dayBook.date,
+              sortDate,
+              type: '0332_sale',
               description: `0332 Sale - ${sale.litres.toFixed(2)}L ${sale.fuelType}`,
-              debit: sale.amount, credit: 0,
+              debit: sale.amount,
+              credit: 0,
             });
           });
-        }
+      }
 
-        // From DailyRecord
-        if (dailyRecord) {
-          (dailyRecord.cashInHand || []).filter(cash => cash.accountId === accountId).forEach(cash => {
-            allEntries.push({
-              date, sortDate, type: 'cash_received',
-              description: `Cash Received${cash.transactionId ? ` - TXN: ${cash.transactionId}` : ''}`,
-              debit: 0, credit: cash.amount,
-            });
-          });
-        }
+      // 3. Add payments received
+      for (const payment of paymentsReceived) {
+        allEntries.push({
+          date: payment.date,
+          sortDate: new Date(payment.date),
+          type: 'payment_received',
+          description: `Payment Received: ${payment.description || 'N/A'}`,
+          debit: 0,
+          credit: payment.amount,
+        });
       }
 
       // 4. Sort all entries by date
@@ -123,7 +128,7 @@ export function AccountLedger({ accountId }: AccountLedgerProps) {
       case 'credit_sale':
       case '0332_sale':
         return <TrendingDown size={14} color="#dc2626" />;
-      case 'cash_received':
+      case 'payment_received':
         return <TrendingUp size={14} color="#059669" />;
       case 'opening_balance':
         return <Calendar size={14} color="#6b7280" />;
@@ -137,7 +142,7 @@ export function AccountLedger({ accountId }: AccountLedgerProps) {
       case 'credit_sale':
       case '0332_sale':
         return '#dc2626';
-      case 'cash_received':
+      case 'payment_received':
         return '#059669';
       default:
         return '#6b7280';
@@ -185,7 +190,7 @@ export function AccountLedger({ accountId }: AccountLedgerProps) {
           <Text style={styles.summaryLabel}>Current Balance</Text>
           <Text style={[
             styles.balanceValue,
-            currentBalance > 0 ? styles.negativeBalance : styles.positiveBalance
+            currentBalance >= 0 ? styles.negativeBalance : styles.positiveBalance
           ]}>
             ₹{Math.abs(currentBalance).toFixed(2)}
           </Text>
@@ -238,7 +243,7 @@ export function AccountLedger({ accountId }: AccountLedgerProps) {
                 <View style={[styles.tableCell, styles.amountColumn]}>
                   <Text style={[
                     styles.balanceText,
-                    entry.balance > 0 ? styles.negativeBalance : styles.positiveBalance
+                    entry.balance >= 0 ? styles.negativeBalance : styles.positiveBalance
                   ]}>
                     ₹{Math.abs(entry.balance).toFixed(2)}
                   </Text>

@@ -16,23 +16,19 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const getSession = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        setSession(session);
-      } catch (error) {
-        console.error('Error getting session:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+    // Check for an active session on startup
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    }).finally(() => {
+      setIsLoading(false);
+    });
 
-    getSession();
-
+    // Listen for authentication state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
 
+    // Clean up the subscription on unmount
     return () => {
       subscription.unsubscribe();
     };
@@ -40,6 +36,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    // The onAuthStateChange listener will handle setting the session to null
   };
 
   const value = {

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Link, useRouter } from 'expo-router';
+import { useRouter, Link } from 'expo-router';
 import { Fuel, Mail, Lock, Eye, EyeOff } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 
@@ -13,18 +13,30 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async () => {
-    setIsLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      Alert.alert('Login Failed', error.message);
-    } else {
-      router.replace('/(tabs)');
+    if (!email.trim() || !password) {
+      Alert.alert('Missing Information', 'Please enter both email and password.');
+      return;
     }
-    setIsLoading(false);
+
+    setIsLoading(true);
+    const trimmedEmail = email.trim();
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: trimmedEmail, // Use the trimmed email
+        password,
+      });
+
+      if (error) {
+        Alert.alert('Login Failed', error.message);
+      } else {
+        router.replace('/(tabs)');
+      }
+    } catch (e: any) {
+      console.error("An unexpected error occurred during login:", e);
+      Alert.alert('Login Error', e.message || 'An unexpected error occurred. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -71,7 +83,7 @@ export default function LoginScreen() {
             <Text style={styles.buttonText}>{isLoading ? 'Logging in...' : 'Login'}</Text>
           </TouchableOpacity>
         </View>
-
+        
         <View style={styles.footer}>
           <Text style={styles.footerText}>Don't have an account? </Text>
           <Link href="/(auth)/signup" asChild>

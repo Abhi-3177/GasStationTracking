@@ -9,19 +9,24 @@ import { Calendar, Edit, Trash2, ChevronDown, ChevronUp } from 'lucide-react-nat
 import { Card } from '../../components/Card';
 import { DayBookRecord } from '../../types/daybook';
 import { calculateTotals } from '../../utils/calculations';
-import { getAllRecords, deleteRecord } from '../../utils/database';
+import { getAllRecords, deleteRecord } from '../../utils/database'; // <-- Switched to database
+import { useAuth } from '../../context/AuthContext';
 
 export default function HistoryScreen() {
+  const { session } = useAuth();
   const router = useRouter();
   const [records, setRecords] = useState<DayBookRecord[]>([]);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [calendarMonth, setCalendarMonth] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [isLoading, setIsLoading] = useState(true);
   const [isCalendarVisible, setIsCalendarVisible] = useState(true);
 
   useFocusEffect(
     useCallback(() => {
-      loadRecords();
-    }, [])
+      if (session) {
+        loadRecords();
+      }
+    }, [session])
   );
 
   const loadRecords = async () => {
@@ -30,9 +35,9 @@ export default function HistoryScreen() {
       const allRecords = await getAllRecords();
       allRecords.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setRecords(allRecords);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading records:', error);
-      Alert.alert('Error', 'Failed to load records from the database.');
+      Alert.alert('Error', error.message || 'Failed to load records.');
     } finally {
       setIsLoading(false);
     }
@@ -76,8 +81,9 @@ export default function HistoryScreen() {
               await deleteRecord(recordDate);
               await loadRecords();
               Alert.alert('Success', 'Record deleted successfully!');
-            } catch (error) {
-              Alert.alert('Error', 'Failed to delete record.');
+            } catch (error: any) {
+              console.error('Error deleting record:', error);
+              Alert.alert('Error', error.message || 'Failed to delete record.');
             }
           },
         },
@@ -137,7 +143,8 @@ export default function HistoryScreen() {
               {isCalendarVisible && (
                 <View style={styles.calendarContainer}>
                     <RNCalendar
-                        current={selectedDate}
+                        current={calendarMonth}
+                        onMonthChange={(month) => setCalendarMonth(month.dateString)}
                         onDayPress={onDayPress}
                         markedDates={markedDates}
                         theme={{

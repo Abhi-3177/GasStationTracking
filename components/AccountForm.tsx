@@ -8,7 +8,7 @@ import { DateSelector } from './DateSelector';
 
 interface AccountFormProps {
   initialData?: Account | null;
-  onSave: (data: Omit<Account, 'id' | 'createdAt'>) => void;
+  onSave: (data: Omit<Account, 'id' | 'createdAt' | 'user_id'>) => void;
   onCancel: () => void;
 }
 

@@ -96,7 +96,6 @@ export interface CalculatedTotals {
   dayBalance: number;
 }
 
-// New types for Daily Record functionality
 export interface BalanceEntry {
   id: string;
   date: string;
@@ -116,78 +115,27 @@ export interface Account {
   createdAt: string;
 }
 
-export interface BankEntry {
+// --- New Daily Record Types ---
+
+export interface BankReconciliationEntry {
+  type: 'atmSale' | 'phonePeSale' | 'paytmSale' | 'cashDeposit';
   expected: number;
-  actual: number;
-  settled: boolean;
+  matched: boolean;
 }
 
-export interface CreditSalesRecordEntry {
+export interface PaymentReceived {
   id: string;
+  date: string;
   accountId: string;
-  vehicleNumber?: string;
-  litres: number;
-  fuelType: 'petrol' | 'diesel';
   amount: number;
-  settled: boolean;
-  settledDate?: string;
-}
-
-export interface CommissionEntry {
-  id: string;
-  type: 'gas' | 'veneer';
   description: string;
-  amount: number;
+  user_id: string;
+  created_at: string;
+}
+
+export interface DailyRecord {
   date: string;
-}
-
-export interface ExpenseEntry {
-  id: string;
-  category: 'gas' | 'veneer' | 'other';
-  description: string;
-  amount: number;
-  date: string;
-}
-
-export interface CashInHandEntry {
-  id: string;
-  accountId: string;
-  amount: number;
-  date: string;
-  transactionId?: string;
-  reconciled: boolean;
-}
-
-export interface SaleByVehicleEntry {
-  id: string;
-  accountId: string;
-  vehicleNumber?: string;
-  litres: number;
-  amount: number;
-  reconciled: boolean;
-}
-
-export interface DailyRecordData {
-  date: string;
-  bankEntries: {
-    atmSale: BankEntry;
-    phonePeSale: BankEntry;
-    paytmSale: BankEntry;
-    cashDeposit: BankEntry;
-  };
-  creditSales: CreditSalesRecordEntry[];
-  commissionPaid: CommissionEntry[];
-  expenses: ExpenseEntry[];
-  cashInHand: CashInHandEntry[];
-  saleByVehicle0332: SaleByVehicleEntry[];
-}
-
-// Validation types
-export interface ValidationResult {
-  isValid: boolean;
-  differences: {
-    fuelDistribution?: number;
-    creditSales?: number;
-    sale0332?: number;
-  };
+  user_id: string;
+  bankReconciliation: BankReconciliationEntry[];
+  paymentsReceived: PaymentReceived[];
 }

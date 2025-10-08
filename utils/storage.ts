@@ -1,9 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DayBookRecord, DailyRecordData, Account } from '../types/daybook';
+import { DayBookRecord, Account } from '../types/daybook';
 import { format, subDays } from 'date-fns';
 
 const STORAGE_PREFIX = 'daybook_';
-const DAILY_RECORD_PREFIX = 'daily_record_';
 const ACCOUNT_PREFIX = 'account_';
 const ACCOUNTS_LIST_KEY = 'accounts_list';
 
@@ -11,15 +10,11 @@ export function getStorageKey(date: string): string {
   return `${STORAGE_PREFIX}${date}`;
 }
 
-export function getDailyRecordKey(date: string): string {
-  return `${DAILY_RECORD_PREFIX}${date}`;
-}
-
 export function getAccountKey(accountId: string): string {
   return `${ACCOUNT_PREFIX}${accountId}`;
 }
 
-// Day Book functions (existing)
+// Day Book functions
 export async function saveRecord(record: DayBookRecord): Promise<void> {
   const key = getStorageKey(record.date);
   await AsyncStorage.setItem(key, JSON.stringify(record));
@@ -66,49 +61,7 @@ export async function deleteRecord(date: string): Promise<void> {
   await AsyncStorage.removeItem(key);
 }
 
-// Daily Record functions (new)
-export async function saveDailyRecord(record: DailyRecordData): Promise<void> {
-  const key = getDailyRecordKey(record.date);
-  await AsyncStorage.setItem(key, JSON.stringify(record));
-}
-
-export async function getDailyRecord(date: string): Promise<DailyRecordData | null> {
-  try {
-    const key = getDailyRecordKey(date);
-    const data = await AsyncStorage.getItem(key);
-    return data ? JSON.parse(data) : null;
-  } catch (error) {
-    console.error('Error getting daily record:', error);
-    return null;
-  }
-}
-
-export async function getAllDailyRecords(): Promise<DailyRecordData[]> {
-  try {
-    const keys = await AsyncStorage.getAllKeys();
-    const dailyRecordKeys = keys.filter(key => key.startsWith(DAILY_RECORD_PREFIX));
-    
-    const records: DailyRecordData[] = [];
-    for (const key of dailyRecordKeys) {
-      const data = await AsyncStorage.getItem(key);
-      if (data) {
-        records.push(JSON.parse(data));
-      }
-    }
-    
-    return records;
-  } catch (error) {
-    console.error('Error getting all daily records:', error);
-    return [];
-  }
-}
-
-export async function deleteDailyRecord(date: string): Promise<void> {
-  const key = getDailyRecordKey(date);
-  await AsyncStorage.removeItem(key);
-}
-
-// Account functions (new)
+// Account functions
 export async function saveAccount(account: Account): Promise<void> {
   const key = getAccountKey(account.id);
   await AsyncStorage.setItem(key, JSON.stringify(account));

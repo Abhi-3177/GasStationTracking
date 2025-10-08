@@ -12,6 +12,8 @@ interface DateSelectorProps {
 
 export function DateSelector({ selectedDate, onDateChange, buttonStyle }: DateSelectorProps) {
   const [showPicker, setShowPicker] = useState(false);
+  // State to manage the currently displayed month in the calendar
+  const [calendarMonth, setCalendarMonth] = useState(format(selectedDate, 'yyyy-MM-dd'));
 
   const handleDayPress = (day: DateData) => {
     // Adjust for timezone differences to ensure the selected date is correct
@@ -21,11 +23,17 @@ export function DateSelector({ selectedDate, onDateChange, buttonStyle }: DateSe
     setShowPicker(false);
   };
 
+  const openPicker = () => {
+    // When opening, ensure the calendar displays the month of the currently selected date
+    setCalendarMonth(format(selectedDate, 'yyyy-MM-dd'));
+    setShowPicker(true);
+  };
+
   return (
     <View style={styles.container}>
       <TouchableOpacity 
         style={[styles.dateButton, buttonStyle]} 
-        onPress={() => setShowPicker(true)}
+        onPress={openPicker}
       >
         <LucideCalendar size={20} color="#2563eb" />
         <Text style={styles.dateText}>
@@ -48,7 +56,9 @@ export function DateSelector({ selectedDate, onDateChange, buttonStyle }: DateSe
               </TouchableOpacity>
             </View>
             <Calendar
-              current={format(selectedDate, 'yyyy-MM-dd')}
+              // Use `calendarMonth` for the current prop to allow month navigation
+              current={calendarMonth}
+              onMonthChange={(month) => setCalendarMonth(month.dateString)}
               onDayPress={handleDayPress}
               markedDates={{
                 [format(selectedDate, 'yyyy-MM-dd')]: { selected: true, selectedColor: '#2563eb' },

@@ -1,4 +1,4 @@
-import { DayBookRecord, DailyRecordData } from "./daybook"
+import { DayBookRecord } from "./daybook"
 
 export type Json =
   | string
@@ -97,38 +97,6 @@ export type Database = {
           },
         ]
       }
-      daily_records: {
-        Row: {
-          created_at: string
-          date: string
-          record: Json | DailyRecordData
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          date: string
-          record: Json | DailyRecordData
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          date?: string
-          record?: Json | DailyRecordData
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "daily_records_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       day_book_records: {
         Row: {
           created_at: string
@@ -157,6 +125,83 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      daily_records: {
+        Row: {
+          date: string
+          user_id: string
+          bank_reconciliation: Json | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          date: string
+          user_id: string
+          bank_reconciliation?: Json | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          date?: string
+          user_id?: string
+          bank_reconciliation?: Json | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_records_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payments_received: {
+        Row: {
+          id: string
+          date: string
+          user_id: string
+          account_id: string
+          amount: number
+          description: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          date: string
+          user_id: string
+          account_id: string
+          amount: number
+          description?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          date?: string
+          user_id?: string
+          account_id?: string
+          amount?: number
+          description?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_received_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_received_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
             referencedColumns: ["id"]
           },
         ]
