@@ -15,11 +15,13 @@ interface ExpensesSectionProps {
 const ExpenseEntry = ({
   item,
   updateFn,
+  addFn,
   removeFn,
   placeholder,
 }: {
   item: GasCommission | AdditionalExpense;
   updateFn: (id: string, updates: any) => void;
+  addFn: () => void;
   removeFn: (id: string) => void;
   placeholder: string;
 }) => (
@@ -40,9 +42,14 @@ const ExpenseEntry = ({
         precision={3}
       />
     </View>
-    <TouchableOpacity onPress={() => removeFn(item.id)} style={styles.removeButton}>
-      <Trash2 size={16} color="#dc2626" />
-    </TouchableOpacity>
+    <View style={styles.actionButtonsContainer}>
+      <TouchableOpacity onPress={() => removeFn(item.id)} style={styles.removeButton}>
+        <Trash2 size={16} color="#dc2626" />
+      </TouchableOpacity>
+      <TouchableOpacity onPress={addFn} style={styles.addButtonRow}>
+        <Plus size={16} color="#059669" />
+      </TouchableOpacity>
+    </View>
   </View>
 );
 
@@ -81,16 +88,28 @@ export function ExpensesSection({ expenses, prices, totals, onUpdateExpenses }: 
         <Text style={styles.title}>Expenses</Text>
       </View>
       
-      <ExpenseGroup title="Gas Commission" onAdd={addGasCommission} total={totalGasCommissions}>
+      <ExpenseGroup title="Gas Commission" total={totalGasCommissions}>
         {expenses.gasCommissions.map(c => (
-          <ExpenseEntry key={c.id} item={c} updateFn={updateGasCommission} removeFn={removeGasCommission} placeholder="Commission description" />
+          <ExpenseEntry key={c.id} item={c} updateFn={updateGasCommission} addFn={addGasCommission} removeFn={removeGasCommission} placeholder="Commission description" />
         ))}
+        {expenses.gasCommissions.length === 0 && (
+          <TouchableOpacity onPress={addGasCommission} style={styles.standaloneAddButton}>
+            <Plus size={16} color="#2563eb" />
+            <Text style={styles.standaloneAddButtonText}>Add Gas Commission</Text>
+          </TouchableOpacity>
+        )}
       </ExpenseGroup>
       
-      <ExpenseGroup title="Additional Expenses" onAdd={addAdditionalExpense} total={totalAdditionalExpenses}>
+      <ExpenseGroup title="Additional Expenses" total={totalAdditionalExpenses}>
         {expenses.additionalExpenses.map(e => (
-          <ExpenseEntry key={e.id} item={e} updateFn={updateAdditionalExpense} removeFn={removeAdditionalExpense} placeholder="Expense description" />
+          <ExpenseEntry key={e.id} item={e} updateFn={updateAdditionalExpense} addFn={addAdditionalExpense} removeFn={removeAdditionalExpense} placeholder="Expense description" />
         ))}
+        {expenses.additionalExpenses.length === 0 && (
+          <TouchableOpacity onPress={addAdditionalExpense} style={styles.standaloneAddButton}>
+            <Plus size={16} color="#2563eb" />
+            <Text style={styles.standaloneAddButtonText}>Add Additional Expense</Text>
+          </TouchableOpacity>
+        )}
       </ExpenseGroup>
       
       <View style={styles.gasTestingSection}>
@@ -116,9 +135,9 @@ export function ExpensesSection({ expenses, prices, totals, onUpdateExpenses }: 
   );
 }
 
-const ExpenseGroup = ({ title, onAdd, total, children }: { title: string, onAdd: () => void, total: number, children: React.ReactNode }) => (
+const ExpenseGroup = ({ title, total, children }: { title: string, total: number, children: React.ReactNode }) => (
   <View style={styles.commissionSection}>
-    <View style={styles.commissionHeader}><Text style={styles.sectionTitle}>{title}</Text><TouchableOpacity onPress={onAdd} style={styles.addButton}><Plus size={16} color="#ffffff" /><Text style={styles.addButtonText}>Add</Text></TouchableOpacity></View>
+    <View style={styles.commissionHeader}><Text style={styles.sectionTitle}>{title}</Text></View>
     {children}
     {total > 0 && <View style={styles.commissionTotal}><Text style={styles.commissionTotalLabel}>Total:</Text><Text style={styles.commissionTotalValue}>₹{total.toFixed(2)}</Text></View>}
   </View>
@@ -130,13 +149,13 @@ const styles = StyleSheet.create({
   commissionSection: { marginBottom: 16 },
   commissionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   sectionTitle: { fontSize: 16, fontWeight: '600', color: '#374151' },
-  addButton: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#2563eb', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
-  addButtonText: { color: '#ffffff', fontSize: 12, fontWeight: '500' },
   commissionRow: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 8 },
   commissionNameInput: { flex: 2 },
   commissionAmountInput: { flex: 1 },
   textInput: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 6, padding: 12, fontSize: 14, backgroundColor: '#ffffff', color: '#1f2937' },
   removeButton: { padding: 8, borderRadius: 6, backgroundColor: '#fef2f2' },
+  addButtonRow: { padding: 8, borderRadius: 6, backgroundColor: '#ecfdf5' },
+  actionButtonsContainer: { flexDirection: 'row', gap: 4 },
   commissionTotal: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTopWidth: 1, borderTopColor: '#e5e7eb', marginTop: 8 },
   commissionTotalLabel: { fontSize: 14, fontWeight: '600', color: '#374151' },
   commissionTotalValue: { fontSize: 14, fontWeight: '700', color: '#ea580c' },
@@ -157,4 +176,21 @@ const styles = StyleSheet.create({
   netSaleRow: { paddingTop: 8, borderTopWidth: 1, borderTopColor: '#e5e7eb', marginTop: 4, marginBottom: 0 },
   netSaleLabel: { fontSize: 16, fontWeight: '600', color: '#374151' },
   netSaleValue: { fontSize: 16, fontWeight: '700', color: '#059669' },
+  standaloneAddButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  standaloneAddButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#2563eb',
+  },
 });

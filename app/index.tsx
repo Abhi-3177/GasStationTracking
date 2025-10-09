@@ -15,9 +15,11 @@ export default function StartPage() {
   }
 
   if (!session) {
+    // If no session after loading, redirect to the login screen.
     return <Redirect href="/(auth)/login" />;
   }
 
+  // If we have a session, go to the main app.
   return <Redirect href="/(tabs)" />;
 }
 

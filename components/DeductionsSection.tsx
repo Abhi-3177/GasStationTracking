@@ -126,6 +126,7 @@ export function DeductionsSection({ prices, deductions, totals, accounts, onUpda
   const renderLitreBasedSale = (
     sale: SviSale | Sale0332 | CreditSale,
     type: 'sviSales' | 'sales0332' | 'creditSales',
+    addFn: () => void,
     removeFn: (id: string) => void,
     placeholder: string
   ) => {
@@ -219,9 +220,14 @@ export function DeductionsSection({ prices, deductions, totals, accounts, onUpda
           />
         </View>
 
-        <TouchableOpacity onPress={() => removeFn(sale.id)} style={styles.removeButton}>
-          <Trash2 size={16} color="#dc2626" />
-        </TouchableOpacity>
+        <View style={styles.actionButtonsContainer}>
+          <TouchableOpacity onPress={() => removeFn(sale.id)} style={styles.removeButton}>
+            <Trash2 size={16} color="#dc2626" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={addFn} style={styles.addButtonRow}>
+            <Plus size={16} color="#059669" />
+          </TouchableOpacity>
+        </View>
       </View>
     );
   };
@@ -242,16 +248,34 @@ export function DeductionsSection({ prices, deductions, totals, accounts, onUpda
         </View>
       )}
       
-      <Section title="SVI Sales" onAdd={addSviSale}>
-        {(deductions.sviSales || []).map(svi => renderLitreBasedSale(svi, 'sviSales', removeSviSale, "SVI sale description"))}
+      <Section title="SVI Sales">
+        {(deductions.sviSales || []).map(svi => renderLitreBasedSale(svi, 'sviSales', addSviSale, removeSviSale, "SVI sale description"))}
+        {(deductions.sviSales || []).length === 0 && (
+          <TouchableOpacity onPress={addSviSale} style={styles.standaloneAddButton}>
+            <Plus size={16} color="#2563eb" />
+            <Text style={styles.standaloneAddButtonText}>Add SVI Sale</Text>
+          </TouchableOpacity>
+        )}
       </Section>
 
-      <Section title="0332 Sales" onAdd={addSale0332}>
-        {(deductions.sales0332 || []).map(sale => renderLitreBasedSale(sale, 'sales0332', removeSale0332, "0332 Account Name"))}
+      <Section title="0332 Sales">
+        {(deductions.sales0332 || []).map(sale => renderLitreBasedSale(sale, 'sales0332', addSale0332, removeSale0332, "0332 Account Name"))}
+        {(deductions.sales0332 || []).length === 0 && (
+          <TouchableOpacity onPress={addSale0332} style={styles.standaloneAddButton}>
+            <Plus size={16} color="#2563eb" />
+            <Text style={styles.standaloneAddButtonText}>Add 0332 Sale</Text>
+          </TouchableOpacity>
+        )}
       </Section>
       
-      <Section title="Credit Sales" onAdd={addCreditSale}>
-        {(deductions.creditSales || []).map(credit => renderLitreBasedSale(credit, 'creditSales', removeCreditSale, "Company/Transporter name"))}
+      <Section title="Credit Sales">
+        {(deductions.creditSales || []).map(credit => renderLitreBasedSale(credit, 'creditSales', addCreditSale, removeCreditSale, "Company/Transporter name"))}
+        {(deductions.creditSales || []).length === 0 && (
+          <TouchableOpacity onPress={addCreditSale} style={styles.standaloneAddButton}>
+            <Plus size={16} color="#2563eb" />
+            <Text style={styles.standaloneAddButtonText}>Add Credit Sale</Text>
+          </TouchableOpacity>
+        )}
       </Section>
       
       <View style={styles.summarySection}>
@@ -268,14 +292,10 @@ export function DeductionsSection({ prices, deductions, totals, accounts, onUpda
   );
 }
 
-const Section = ({ title, onAdd, children }: { title: string, onAdd: () => void, children: React.ReactNode }) => (
+const Section = ({ title, children }: { title: string, children: React.ReactNode }) => (
   <View style={styles.salesSection}>
     <View style={styles.salesHeader}>
       <Text style={styles.sectionTitle}>{title}</Text>
-      <TouchableOpacity onPress={onAdd} style={styles.addButton}>
-        <Plus size={16} color="#ffffff" />
-        <Text style={styles.addButtonText}>Add</Text>
-      </TouchableOpacity>
     </View>
     {children}
   </View>
@@ -304,11 +324,11 @@ const styles = StyleSheet.create({
   salesSection: { marginBottom: 16 },
   salesHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   sectionTitle: { fontSize: 16, fontWeight: '600', color: '#374151' },
-  addButton: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#2563eb', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
-  addButtonText: { color: '#ffffff', fontSize: 12, fontWeight: '500' },
   saleRow: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 8 },
   textInput: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 6, padding: 12, fontSize: 14, backgroundColor: '#ffffff', color: '#1f2937' },
   removeButton: { padding: 8, borderRadius: 6, backgroundColor: '#fef2f2' },
+  addButtonRow: { padding: 8, borderRadius: 6, backgroundColor: '#ecfdf5' },
+  actionButtonsContainer: { flexDirection: 'row', gap: 4 },
   summarySection: { backgroundColor: '#f9fafb', padding: 12, borderRadius: 8, marginTop: 8 },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   summaryLabel: { fontSize: 14, color: '#6b7280' },
@@ -326,5 +346,22 @@ const styles = StyleSheet.create({
   autoCalculatedInput: {
     backgroundColor: '#f3f4f6',
     color: '#6b7280',
+  },
+  standaloneAddButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  standaloneAddButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#2563eb',
   },
 });

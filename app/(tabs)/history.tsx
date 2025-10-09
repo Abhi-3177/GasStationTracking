@@ -1,52 +1,86 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { ScrollView, View, StyleSheet, Text, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { format } from 'date-fns';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Calendar as RNCalendar, DateData } from 'react-native-calendars';
-import { Calendar, Edit, Trash2, ChevronDown, ChevronUp } from 'lucide-react-native';
+import { Calendar, ChevronDown, ChevronUp, BookOpen, ClipboardList, Trash2 } from 'lucide-react-native';
 
 import { Card } from '../../components/Card';
-import { DayBookRecord } from '../../types/daybook';
+import { DayBookRecord, DailyRecord } from '../../types/daybook';
 import { calculateTotals } from '../../utils/calculations';
-import { getAllRecords, deleteRecord } from '../../utils/database'; // <-- Switched to database
+import { getAllRecords, getAllDailyRecords, deleteRecordsForDate } from '../../utils/database';
 import { useAuth } from '../../context/AuthContext';
+import { useData } from '../../context/DataContext';
+
+interface HistoryItem {
+  date: string;
+  dayBook: DayBookRecord | null;
+  dailyRecord: DailyRecord | null;
+}
 
 export default function HistoryScreen() {
-  const { session } = useAuth();
+  const { user } = useAuth();
+  const { dataVersion, refreshData } = useData();
   const router = useRouter();
-  const [records, setRecords] = useState<DayBookRecord[]>([]);
+  const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [calendarMonth, setCalendarMonth] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [isLoading, setIsLoading] = useState(true);
   const [isCalendarVisible, setIsCalendarVisible] = useState(true);
 
-  useFocusEffect(
-    useCallback(() => {
-      if (session) {
-        loadRecords();
-      }
-    }, [session])
-  );
-
-  const loadRecords = async () => {
+  const loadHistory = useCallback(async () => {
+    if (!user?.id) return;
     setIsLoading(true);
     try {
-      const allRecords = await getAllRecords();
-      allRecords.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      setRecords(allRecords);
+      const [dayBookRecords, dailyRecords] = await Promise.all([
+        getAllRecords(),
+        getAllDailyRecords(),
+      ]);
+
+      const combinedData: { [date: string]: HistoryItem } = {};
+
+      dayBookRecords.forEach(record => {
+        if (!combinedData[record.date]) {
+          combinedData[record.date] = { date: record.date, dayBook: null, dailyRecord: null };
+        }
+        combinedData[record.date].dayBook = record;
+      });
+
+      dailyRecords.forEach(record => {
+        if (!combinedData[record.date]) {
+          combinedData[record.date] = { date: record.date, dayBook: null, dailyRecord: null };
+        }
+        combinedData[record.date].dailyRecord = record;
+      });
+
+      const sortedHistory = Object.values(combinedData).sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+
+      setHistoryItems(sortedHistory);
     } catch (error: any) {
-      console.error('Error loading records:', error);
-      Alert.alert('Error', error.message || 'Failed to load records.');
+      console.error('Error loading history:', error);
+      Alert.alert('Error', error.message || 'Failed to load history.');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [user?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadHistory();
+    }, [loadHistory])
+  );
+
+  useEffect(() => {
+    loadHistory();
+  }, [dataVersion]);
 
   const markedDates = useMemo(() => {
     const marks: { [key: string]: any } = {};
-    records.forEach(record => {
-      marks[record.date] = { marked: true, dotColor: '#2563eb' };
+    historyItems.forEach(item => {
+      marks[item.date] = { marked: true, dotColor: '#2563eb' };
     });
     marks[selectedDate] = { 
       ...(marks[selectedDate] || {}), 
@@ -54,23 +88,23 @@ export default function HistoryScreen() {
       selectedColor: '#2563eb',
     };
     return marks;
-  }, [records, selectedDate]);
+  }, [historyItems, selectedDate]);
 
   const onDayPress = (day: DateData) => {
     setSelectedDate(day.dateString);
   };
 
-  const handleEditSelectedDate = () => {
+  const handleEditRecord = (path: string, date: string) => {
     router.push({
-      pathname: '/(tabs)',
-      params: { date: selectedDate },
+      pathname: path,
+      params: { date },
     });
   };
 
-  const handleDeleteRecord = (recordDate: string) => {
+  const handleDeleteRecords = (date: string) => {
     Alert.alert(
-      'Delete Record',
-      `Are you sure you want to delete the record for ${format(new Date(recordDate), 'PPP')}?`,
+      'Delete All Records for Date',
+      `Are you sure you want to delete all records for ${format(new Date(date), 'PPP')}? This will delete the Day Book and Daily Record for this date.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -78,12 +112,12 @@ export default function HistoryScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await deleteRecord(recordDate);
-              await loadRecords();
-              Alert.alert('Success', 'Record deleted successfully!');
+              await deleteRecordsForDate(date);
+              refreshData(); // Use the context to trigger a refresh
+              Alert.alert('Success', 'Records for the selected date have been deleted.');
             } catch (error: any) {
-              console.error('Error deleting record:', error);
-              Alert.alert('Error', error.message || 'Failed to delete record.');
+              console.error('Error deleting records:', error);
+              Alert.alert('Error', error.message || 'Failed to delete records.');
             }
           },
         },
@@ -91,14 +125,19 @@ export default function HistoryScreen() {
     );
   };
 
-  const renderRecordCard = (record: DayBookRecord) => {
-    const totals = calculateTotals(record);
-    const recordDate = new Date(record.date);
+  const renderHistoryCard = (item: HistoryItem) => {
+    const { date, dayBook, dailyRecord } = item;
+    const totals = dayBook ? calculateTotals(dayBook) : null;
+    
+    const recordDate = new Date(date);
     const timezoneOffset = recordDate.getTimezoneOffset() * 60000;
     const adjustedDate = new Date(recordDate.getTime() + timezoneOffset);
+
+    const totalBankSettled = dailyRecord?.bankReconciliation.reduce((sum, entry) => sum + entry.actual, 0) || 0;
+    const totalPaymentsReceived = dailyRecord?.paymentsReceived.reduce((sum, p) => sum + p.amount, 0) || 0;
     
     return (
-      <Card key={record.date} style={styles.recordCard}>
+      <Card key={date} style={styles.recordCard}>
         <View style={styles.recordHeader}>
           <View style={styles.dateSection}>
             <Calendar size={20} color="#2563eb" />
@@ -107,20 +146,55 @@ export default function HistoryScreen() {
             </Text>
           </View>
           <TouchableOpacity
-            onPress={() => handleDeleteRecord(record.date)}
+            onPress={() => handleDeleteRecords(date)}
             style={styles.deleteButton}
           >
             <Trash2 size={18} color="#ef4444" />
           </TouchableOpacity>
         </View>
         
-        <View style={styles.recordDetails}>
-          <View style={styles.recordRow}>
-            <Text style={styles.recordLabel}>Day Balance:</Text>
-            <Text style={[styles.dayBalanceValue, totals.dayBalance < 0 && styles.negativeBalance]}>
-              ₹{totals.dayBalance.toFixed(2)}
-            </Text>
-          </View>
+        <View style={styles.recordContent}>
+          {dayBook && totals && (
+            <View style={styles.summarySection}>
+              <View style={styles.summaryHeader}>
+                <BookOpen size={16} color="#059669" />
+                <Text style={styles.summaryTitle}>Day Book</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Day Balance:</Text>
+                <Text style={[styles.dayBalanceValue, totals.dayBalance < 0 && styles.negativeBalance]}>
+                  ₹{totals.dayBalance.toFixed(2)}
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.viewButton} onPress={() => handleEditRecord('/(tabs)', date)}>
+                <Text style={styles.viewButtonText}>View / Edit Day Book</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {dailyRecord && (
+            <View style={styles.summarySection}>
+              <View style={styles.summaryHeader}>
+                <ClipboardList size={16} color="#7c3aed" />
+                <Text style={styles.summaryTitle}>Daily Record</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Bank Settled:</Text>
+                <Text style={styles.summaryValue}>₹{totalBankSettled.toFixed(2)}</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Payments Received:</Text>
+                <Text style={styles.summaryValue}>₹{totalPaymentsReceived.toFixed(2)}</Text>
+              </View>
+              <TouchableOpacity style={styles.viewButton} onPress={() => handleEditRecord('/(tabs)/daily-record', date)}>
+                <Text style={styles.viewButtonText}>View / Edit Daily Record</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {!dayBook && !dailyRecord && (
+            <Text style={styles.noDataText}>No summary data available.</Text>
+          )}
         </View>
       </Card>
     );
@@ -135,7 +209,7 @@ export default function HistoryScreen() {
               <TouchableOpacity style={styles.collapsibleHeader} onPress={() => setIsCalendarVisible(!isCalendarVisible)}>
                 <View style={styles.collapsibleTitleContainer}>
                     <Calendar size={20} color="#1f2937" />
-                    <Text style={styles.collapsibleTitle}>Calendar & Date Selection</Text>
+                    <Text style={styles.collapsibleTitle}>Calendar</Text>
                 </View>
                 {isCalendarVisible ? <ChevronUp size={24} color="#2563eb" /> : <ChevronDown size={24} color="#2563eb" />}
               </TouchableOpacity>
@@ -148,35 +222,29 @@ export default function HistoryScreen() {
                         onDayPress={onDayPress}
                         markedDates={markedDates}
                         theme={{
-                        todayTextColor: '#2563eb',
-                        arrowColor: '#2563eb',
-                        'stylesheet.calendar.header': { week: { marginTop: 5, flexDirection: 'row', justifyContent: 'space-between' } }
+                          todayTextColor: '#2563eb',
+                          arrowColor: '#2563eb',
+                          'stylesheet.calendar.header': { week: { marginTop: 5, flexDirection: 'row', justifyContent: 'space-between' } }
                         }}
                     />
-                    <TouchableOpacity style={styles.editButton} onPress={handleEditSelectedDate}>
-                        <Edit size={18} color="#ffffff" />
-                        <Text style={styles.editButtonText}>
-                        View / Edit {format(new Date(selectedDate), 'MMM d')}
-                        </Text>
-                    </TouchableOpacity>
                 </View>
               )}
             </Card>
 
             <View style={styles.recordsHeader}>
               <Text style={styles.recordsTitle}>
-                Recent Records ({records.length})
+                History ({historyItems.length})
               </Text>
             </View>
 
             {isLoading ? (
               <ActivityIndicator size="large" color="#2563eb" />
-            ) : records.length === 0 ? (
+            ) : historyItems.length === 0 ? (
               <Card style={styles.emptyCard}>
                 <Text style={styles.emptyText}>No records found.</Text>
               </Card>
             ) : (
-              records.map(renderRecordCard)
+              historyItems.map(renderHistoryCard)
             )}
           </View>
         </ScrollView>
@@ -186,117 +254,57 @@ export default function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  content: {
-    padding: 16,
-    gap: 16,
-    paddingBottom: 32,
-  },
-  collapsibleHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  collapsibleTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  collapsibleTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1f2937',
-  },
-  calendarContainer: {
-    paddingTop: 16,
-    marginTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-  },
-  editButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#2563eb',
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginTop: 16,
-  },
-  editButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  recordsHeader: {
-    marginTop: 8,
-  },
-  recordsTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#1f2937',
-  },
-  recordCard: {
-    padding: 16,
-  },
+  container: { flex: 1, backgroundColor: '#f8fafc' },
+  scrollView: { flex: 1 },
+  content: { padding: 16, gap: 16, paddingBottom: 32 },
+  collapsibleHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  collapsibleTitleContainer: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  collapsibleTitle: { fontSize: 18, fontWeight: '600', color: '#1f2937' },
+  calendarContainer: { paddingTop: 16, marginTop: 16, borderTopWidth: 1, borderTopColor: '#e5e7eb' },
+  recordsHeader: { marginTop: 8 },
+  recordsTitle: { fontSize: 20, fontWeight: '600', color: '#1f2937' },
+  recordCard: { padding: 0, overflow: 'hidden' },
   recordHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
-    paddingBottom: 12,
+    padding: 16,
+    backgroundColor: '#f9fafb',
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
   },
-  dateSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  dateSection: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  recordDate: { fontSize: 16, fontWeight: '600', color: '#2563eb' },
+  deleteButton: { padding: 8, borderRadius: 8, backgroundColor: '#fef2f2' },
+  recordContent: { padding: 16, gap: 16 },
+  summarySection: {
+    backgroundColor: '#ffffff',
+    padding: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    gap: 12,
   },
-  recordDate: {
-    fontSize: 16,
+  summaryHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  summaryTitle: { fontSize: 16, fontWeight: '600', color: '#374151' },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  summaryLabel: { fontSize: 14, color: '#6b7280' },
+  summaryValue: { fontSize: 14, fontWeight: '600', color: '#1f2937' },
+  dayBalanceValue: { fontSize: 14, fontWeight: '700', color: '#059669' },
+  negativeBalance: { color: '#dc2626' },
+  viewButton: {
+    marginTop: 12,
+    paddingVertical: 8,
+    backgroundColor: '#eff6ff',
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  viewButtonText: {
+    fontSize: 14,
     fontWeight: '600',
     color: '#2563eb',
   },
-  deleteButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#fef2f2',
-  },
-  recordDetails: {
-    gap: 8,
-  },
-  recordRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  recordLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1f2937',
-  },
-  dayBalanceValue: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#059669',
-  },
-  negativeBalance: {
-    color: '#dc2626',
-  },
-  emptyCard: {
-    padding: 32,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#6b7280',
-    textAlign: 'center',
-  },
+  emptyCard: { padding: 32, alignItems: 'center' },
+  emptyText: { fontSize: 16, color: '#6b7280', textAlign: 'center' },
+  noDataText: { fontSize: 14, color: '#6b7280', textAlign: 'center', fontStyle: 'italic', paddingVertical: 8 },
 });

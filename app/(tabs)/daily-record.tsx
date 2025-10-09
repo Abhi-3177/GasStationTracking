@@ -1,27 +1,29 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { ScrollView, View, StyleSheet, Alert, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { format } from 'date-fns';
-import { useFocusEffect } from 'expo-router';
 import { Save } from 'lucide-react-native';
+import { useFocusEffect } from 'expo-router';
 
 import { DateSelector } from '../../components/DateSelector';
 import { BankReconciliation } from '../../components/BankReconciliation';
 import { DayBookSummary } from '../../components/DayBookSummary';
 import { PaymentsReceived } from '../../components/PaymentsReceived';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
+import { CashInHandSummary } from '../../components/CashInHandSummary';
 
 import { DayBookRecord, DailyRecord, Account, BankReconciliationEntry, PaymentReceived } from '../../types/daybook';
 import { getRecord, getPreviousRecord, getAllAccounts, getDailyRecord, saveDailyRecord, addPaymentReceived, deletePaymentReceived } from '../../utils/database';
 import { useAuth } from '../../context/AuthContext';
+import { useData } from '../../context/DataContext';
 
 const createNewDailyRecord = (date: string, userId: string, prevDayBook: DayBookRecord | null): DailyRecord => {
   const prevPayments = prevDayBook?.payments || { atmSale: 0, phonePeSale: 0, paytmSale: 0, cashDeposit: 0 };
   const bankReconciliation: BankReconciliationEntry[] = [
-    { type: 'atmSale', expected: prevPayments.atmSale, matched: false },
-    { type: 'phonePeSale', expected: prevPayments.phonePeSale, matched: false },
-    { type: 'paytmSale', expected: prevPayments.paytmSale, matched: false },
-    { type: 'cashDeposit', expected: prevPayments.cashDeposit, matched: false },
+    { type: 'atmSale', expected: prevPayments.atmSale, actual: 0, matched: false },
+    { type: 'phonePeSale', expected: prevPayments.phonePeSale, actual: 0, matched: false },
+    { type: 'paytmSale', expected: prevPayments.paytmSale, actual: 0, matched: false },
+    { type: 'cashDeposit', expected: prevPayments.cashDeposit, actual: 0, matched: false },
   ];
 
   return {
@@ -34,6 +36,7 @@ const createNewDailyRecord = (date: string, userId: string, prevDayBook: DayBook
 
 export default function DailyRecordScreen() {
   const { user } = useAuth();
+  const { dataVersion, refreshData } = useData();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isLoading, setIsLoading] = useState(true);
   
@@ -42,49 +45,52 @@ export default function DailyRecordScreen() {
   const [dailyRecord, setDailyRecord] = useState<DailyRecord | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
 
+  const loadData = useCallback(async () => {
+    if (!user?.id) return;
+    
+    setIsLoading(true);
+    const dateKey = format(selectedDate, 'yyyy-MM-dd');
+    
+    try {
+      const [dbRecord, prevDbRecord, existingDailyRecord, allAccounts] = await Promise.all([
+        getRecord(dateKey),
+        getPreviousRecord(dateKey),
+        getDailyRecord(dateKey),
+        getAllAccounts(),
+      ]);
+
+      setDayBookRecord(dbRecord);
+      setPreviousDayBookRecord(prevDbRecord);
+      setAccounts(allAccounts);
+
+      if (existingDailyRecord) {
+        const prevPayments = prevDbRecord?.payments || { atmSale: 0, phonePeSale: 0, paytmSale: 0, cashDeposit: 0 };
+        const updatedReconciliation = existingDailyRecord.bankReconciliation.map(entry => ({
+          ...entry,
+          expected: prevPayments[entry.type] || 0,
+        }));
+        setDailyRecord({ ...existingDailyRecord, bankReconciliation: updatedReconciliation });
+      } else {
+        setDailyRecord(createNewDailyRecord(dateKey, user.id, prevDbRecord));
+      }
+
+    } catch (error: any) {
+      console.error('Error loading Daily Record data:', error);
+      Alert.alert('Loading Error', error.message || 'Could not load data.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [selectedDate, user?.id]);
+
   useFocusEffect(
     useCallback(() => {
-      if (!user) return;
-
-      const loadData = async () => {
-        setIsLoading(true);
-        const dateKey = format(selectedDate, 'yyyy-MM-dd');
-        
-        try {
-          const [dbRecord, prevDbRecord, existingDailyRecord, allAccounts] = await Promise.all([
-            getRecord(dateKey),
-            getPreviousRecord(dateKey),
-            getDailyRecord(dateKey),
-            getAllAccounts(),
-          ]);
-
-          setDayBookRecord(dbRecord);
-          setPreviousDayBookRecord(prevDbRecord);
-          setAccounts(allAccounts);
-
-          if (existingDailyRecord) {
-            // Ensure bank reconciliation data is up-to-date with previous day's record
-            const prevPayments = prevDbRecord?.payments || { atmSale: 0, phonePeSale: 0, paytmSale: 0, cashDeposit: 0 };
-            const updatedReconciliation = existingDailyRecord.bankReconciliation.map(entry => ({
-              ...entry,
-              expected: prevPayments[entry.type] || 0,
-            }));
-            setDailyRecord({ ...existingDailyRecord, bankReconciliation: updatedReconciliation });
-          } else {
-            setDailyRecord(createNewDailyRecord(dateKey, user.id, prevDbRecord));
-          }
-
-        } catch (error: any) {
-          console.error('Error loading Daily Record data:', error);
-          Alert.alert('Loading Error', error.message || 'Could not load data.');
-        } finally {
-          setIsLoading(false);
-        }
-      };
-
       loadData();
-    }, [selectedDate, user])
+    }, [loadData])
   );
+
+  useEffect(() => {
+    loadData();
+  }, [dataVersion]);
 
   const handleUpdateReconciliation = (updatedReconciliation: BankReconciliationEntry[]) => {
     setDailyRecord(prev => prev ? { ...prev, bankReconciliation: updatedReconciliation } : null);
@@ -92,8 +98,8 @@ export default function DailyRecordScreen() {
 
   const handleAddPayment = async (payment: Omit<PaymentReceived, 'id' | 'user_id' | 'created_at'>) => {
     try {
-      const newPayment = await addPaymentReceived(payment);
-      setDailyRecord(prev => prev ? { ...prev, paymentsReceived: [...prev.paymentsReceived, newPayment] } : null);
+      await addPaymentReceived(payment);
+      refreshData();
       Alert.alert('Success', 'Payment added successfully!');
     } catch (error: any) {
       Alert.alert('Error', 'Failed to add payment.');
@@ -103,7 +109,7 @@ export default function DailyRecordScreen() {
   const handleDeletePayment = async (paymentId: string) => {
     try {
       await deletePaymentReceived(paymentId);
-      setDailyRecord(prev => prev ? { ...prev, paymentsReceived: prev.paymentsReceived.filter(p => p.id !== paymentId) } : null);
+      refreshData();
       Alert.alert('Success', 'Payment deleted successfully!');
     } catch (error: any) {
       Alert.alert('Error', 'Failed to delete payment.');
@@ -156,6 +162,11 @@ export default function DailyRecordScreen() {
                 onAddPayment={handleAddPayment}
                 onDeletePayment={handleDeletePayment}
                 date={dailyRecord.date}
+              />
+
+              <CashInHandSummary 
+                dayBookRecord={dayBookRecord}
+                dailyRecord={dailyRecord}
               />
 
               <TouchableOpacity style={styles.saveButton} onPress={handleSave}>

@@ -1,16 +1,20 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { ScrollView, View, StyleSheet, Text, TouchableOpacity, Alert, Modal, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
 import { Users, Plus, Edit, Trash2, X } from 'lucide-react-native';
+import { useFocusEffect } from 'expo-router';
 
 import { Card } from '../../components/Card';
 import { AccountForm } from '../../components/AccountForm';
 import { AccountLedger } from '../../components/AccountLedger';
-import { Account, BalanceEntry } from '../../types/daybook';
-import { getAllAccounts, saveAccount, deleteAccount } from '../../utils/database'; // <-- Switched to database
+import { Account } from '../../types/daybook';
+import { getAllAccounts, saveAccount, deleteAccount } from '../../utils/database';
+import { useAuth } from '../../context/AuthContext';
+import { useData } from '../../context/DataContext';
 
 export default function AccountsScreen() {
+  const { user } = useAuth();
+  const { dataVersion, refreshData } = useData();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
@@ -18,13 +22,8 @@ export default function AccountsScreen() {
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadAccounts();
-    }, [])
-  );
-
-  const loadAccounts = async () => {
+  const loadAccounts = useCallback(async () => {
+    if (!user?.id) return;
     setIsLoading(true);
     try {
       const accountsList = await getAllAccounts();
@@ -35,19 +34,29 @@ export default function AccountsScreen() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [user?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadAccounts();
+    }, [loadAccounts])
+  );
+
+  useEffect(() => {
+    loadAccounts();
+  }, [dataVersion]);
 
   const handleSaveAccount = async (accountData: Omit<Account, 'id' | 'createdAt' | 'user_id'>) => {
     try {
       const account: Account = {
-        id: editingAccount?.id || `new_${Date.now()}`, // Use a temporary ID for new accounts
-        user_id: '', // This will be handled by the database function
+        id: editingAccount?.id || `new_${Date.now()}`,
+        user_id: '',
         ...accountData,
         createdAt: editingAccount?.createdAt || new Date().toISOString(),
       };
       
       await saveAccount(account);
-      await loadAccounts();
+      refreshData();
       setShowForm(false);
       setEditingAccount(null);
       Alert.alert('Success', `Account ${editingAccount ? 'updated' : 'created'} successfully!`);
@@ -55,11 +64,6 @@ export default function AccountsScreen() {
       console.error('Error saving account:', error);
       Alert.alert('Error', error.message || 'Failed to save account.');
     }
-  };
-
-  const handleEditAccount = (account: Account) => {
-    setEditingAccount(account);
-    setShowForm(true);
   };
 
   const handleDeleteAccount = (account: Account) => {
@@ -74,7 +78,7 @@ export default function AccountsScreen() {
           onPress: async () => {
             try {
               await deleteAccount(account.id);
-              await loadAccounts();
+              refreshData();
               Alert.alert('Success', 'Account deleted successfully!');
             } catch (error: any) {
               console.error('Error deleting account:', error);
@@ -84,6 +88,11 @@ export default function AccountsScreen() {
         },
       ]
     );
+  };
+
+  const handleEditAccount = (account: Account) => {
+    setEditingAccount(account);
+    setShowForm(true);
   };
 
   const handleViewLedger = (account: Account) => {

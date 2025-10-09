@@ -120,6 +120,7 @@ export interface Account {
 export interface BankReconciliationEntry {
   type: 'atmSale' | 'phonePeSale' | 'paytmSale' | 'cashDeposit';
   expected: number;
+  actual: number; // <-- Added this field
   matched: boolean;
 }
 

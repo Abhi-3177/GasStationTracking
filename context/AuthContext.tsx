@@ -6,7 +6,7 @@ type AuthContextType = {
   session: Session | null;
   user: User | null;
   isLoading: boolean;
-  signOut: () => Promise<void>;
+  signOut: () => void;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -16,19 +16,23 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check for an active session on startup
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const fetchSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
       setSession(session);
-    }).finally(() => {
       setIsLoading(false);
-    });
+    };
 
-    // Listen for authentication state changes
+    fetchSession();
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      // If the user signs out, we don't need to set loading.
+      // If they sign in, the UI will update accordingly.
+      if (_event === 'INITIAL_SESSION') {
+        setIsLoading(false);
+      }
     });
 
-    // Clean up the subscription on unmount
     return () => {
       subscription.unsubscribe();
     };
@@ -36,7 +40,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
-    // The onAuthStateChange listener will handle setting the session to null
   };
 
   const value = {

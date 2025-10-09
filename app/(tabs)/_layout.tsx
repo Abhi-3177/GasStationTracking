@@ -1,5 +1,5 @@
 import { Tabs, Redirect } from 'expo-router';
-import { BookOpen, Users, History, ClipboardList } from 'lucide-react-native';
+import { BookOpen, Users, History, ClipboardList, Settings } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { Header } from '../../components/Header';
 
@@ -7,8 +7,6 @@ export default function TabLayout() {
   const { session, signOut } = useAuth();
 
   if (!session) {
-    // This will now correctly redirect to the login screen
-    // as the AuthContext will no longer provide an anonymous session.
     return <Redirect href="/" />;
   }
 
@@ -30,8 +28,8 @@ export default function TabLayout() {
           if (route.name === 'daily-record') title = 'Daily Record';
           if (route.name === 'accounts') title = 'Accounts';
           if (route.name === 'history') title = 'History';
-          // Re-enable the logout button
-          return <Header title={title} showLogout onLogout={signOut} />;
+          if (route.name === 'settings') title = 'Settings';
+          return <Header title={title} showLogout={true} onLogout={signOut} />;
         },
       })}
     >
@@ -61,6 +59,13 @@ export default function TabLayout() {
         options={{
           title: 'History',
           tabBarIcon: ({ color, size }) => <History color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Settings',
+          tabBarIcon: ({ color, size }) => <Settings color={color} size={size} />,
         }}
       />
     </Tabs>

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { ScrollView, View, StyleSheet, Alert, Text, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { format } from 'date-fns';
-import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 
 // Import Components
 import { ErrorBoundary } from '../../components/ErrorBoundary';
@@ -19,8 +19,9 @@ import { SaveButton } from '../../components/SaveButton';
 // Import Types and Utils
 import { DayBookRecord, MachineReading, Account } from '../../types/daybook';
 import { calculateTotals } from '../../utils/calculations';
-import { saveRecord, getRecord, getPreviousRecord, getAllAccounts } from '../../utils/database'; // <-- Switched to database
+import { saveRecord, getRecord, getPreviousRecord, getAllAccounts } from '../../utils/database';
 import { useAuth } from '../../context/AuthContext';
+import { useData } from '../../context/DataContext';
 
 // Default opening readings for the very first record
 const DEFAULT_OPENING_READINGS = {
@@ -28,11 +29,6 @@ const DEFAULT_OPENING_READINGS = {
   diesel: [3616534.92, 6582107.77, 2190335.56, 4041675.08],
 };
 
-/**
- * Creates a new, empty DayBookRecord for a given date.
- * It uses the previous day's closing readings as the new opening readings.
- * If no previous record exists, it falls back to hardcoded default values.
- */
 const createNewRecord = (dateKey: string, previousRecord: DayBookRecord | null): DayBookRecord => ({
   date: dateKey,
   machines: {
@@ -55,10 +51,6 @@ const createNewRecord = (dateKey: string, previousRecord: DayBookRecord | null):
   payments: { atmSale: 0, phonePeSale: 0, paytmSale: 0, cashDeposit: 0 },
 });
 
-/**
- * Merges a loaded record with a default empty record to ensure all properties exist.
- * This prevents crashes if the data structure has changed over time.
- */
 const normalizeRecord = (loadedRecord: Partial<DayBookRecord>, defaultRecord: DayBookRecord): DayBookRecord => {
   return {
     ...defaultRecord,
@@ -85,7 +77,8 @@ const normalizeRecord = (loadedRecord: Partial<DayBookRecord>, defaultRecord: Da
 };
 
 export default function DayBookScreen() {
-  const { session } = useAuth();
+  const { user } = useAuth();
+  const { dataVersion } = useData();
   const router = useRouter();
   const params = useLocalSearchParams<{ date?: string }>();
   
@@ -99,7 +92,6 @@ export default function DayBookScreen() {
   useEffect(() => {
     if (params.date && typeof params.date === 'string') {
       const newSelectedDate = new Date(params.date);
-      // Adjust for timezone to avoid date shifting
       const timezoneOffset = newSelectedDate.getTimezoneOffset() * 60000;
       const adjustedDate = new Date(newSelectedDate.getTime() + timezoneOffset);
 
@@ -107,54 +99,45 @@ export default function DayBookScreen() {
         setSelectedDate(adjustedDate);
       }
       
-      // Clear the param to prevent re-triggering
       router.setParams({ date: undefined });
     }
   }, [params.date]);
   
-  // Main data loading effect, runs on screen focus and when the date changes.
-  useFocusEffect(
-    useCallback(() => {
-      if (!session) return; // Don't load if not authenticated
+  const loadData = useCallback(async () => {
+    if (!user?.id) return;
 
-      const loadData = async () => {
-        setIsLoading(true);
-        const dateKey = format(selectedDate, 'yyyy-MM-dd');
-        
-        try {
-          // Fetch all data in parallel for performance
-          const [existingRecord, previousRecord, allAccounts] = await Promise.all([
-            getRecord(dateKey),
-            getPreviousRecord(dateKey),
-            getAllAccounts(),
-          ]);
-          
-          const defaultRecord = createNewRecord(dateKey, previousRecord);
-          
-          if (existingRecord) {
-            // If a record exists, normalize it to prevent crashes from missing fields
-            const normalized = normalizeRecord(existingRecord, defaultRecord);
-            setRecord(normalized);
-          } else {
-            // Otherwise, use the newly created default record
-            setRecord(defaultRecord);
-          }
-          
-          setPreviousDayMachines(previousRecord?.machines || null);
-          setAccounts(allAccounts);
-        } catch (error: any) {
-          console.error('Error loading Day Book data:', error);
-          Alert.alert('Loading Error', error.message || 'Could not load data for the selected date.');
-        } finally {
-          setIsLoading(false);
-        }
-      };
+    setIsLoading(true);
+    const dateKey = format(selectedDate, 'yyyy-MM-dd');
+    
+    try {
+      const [existingRecord, previousRecord, allAccounts] = await Promise.all([
+        getRecord(dateKey),
+        getPreviousRecord(dateKey),
+        getAllAccounts(),
+      ]);
+      
+      const defaultRecord = createNewRecord(dateKey, previousRecord);
+      
+      if (existingRecord) {
+        const normalized = normalizeRecord(existingRecord, defaultRecord);
+        setRecord(normalized);
+      } else {
+        setRecord(defaultRecord);
+      }
+      
+      setPreviousDayMachines(previousRecord?.machines || null);
+      setAccounts(allAccounts);
+    } catch (error: any) {
+      console.error('Error loading Day Book data:', error);
+      Alert.alert('Loading Error', error.message || 'Could not load data for the selected date.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [selectedDate, user?.id]);
 
-      loadData();
-    }, [selectedDate, session])
-  );
-
-  // --- State Update Handlers ---
+  useEffect(() => {
+    loadData();
+  }, [loadData, dataVersion]);
 
   const updateRecord = (updates: Partial<DayBookRecord>) => {
     setRecord(prev => (prev ? { ...prev, ...updates } : null));
@@ -185,8 +168,6 @@ export default function DayBookScreen() {
       Alert.alert('Save Error', error.message || 'Failed to save the record. Please try again.');
     }
   };
-
-  // --- Render Logic ---
 
   if (isLoading || !record) {
     return (

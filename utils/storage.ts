@@ -6,6 +6,23 @@ const STORAGE_PREFIX = 'daybook_';
 const ACCOUNT_PREFIX = 'account_';
 const ACCOUNTS_LIST_KEY = 'accounts_list';
 
+export async function clearAllLocalStorage(): Promise<void> {
+  try {
+    const allKeys = await AsyncStorage.getAllKeys();
+    const appKeys = allKeys.filter(key => 
+      key.startsWith(STORAGE_PREFIX) || 
+      key.startsWith(ACCOUNT_PREFIX) || 
+      key === ACCOUNTS_LIST_KEY
+    );
+    if (appKeys.length > 0) {
+      await AsyncStorage.multiRemove(appKeys);
+    }
+    console.log('Local storage cleared successfully.');
+  } catch (error) {
+    console.error('Error clearing local storage:', error);
+  }
+}
+
 export function getStorageKey(date: string): string {
   return `${STORAGE_PREFIX}${date}`;
 }
