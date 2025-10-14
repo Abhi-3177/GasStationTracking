@@ -4,19 +4,22 @@ import { Wallet } from 'lucide-react-native';
 import { Card } from './Card';
 import { DayBookRecord, DailyRecord } from '../types/daybook';
 import { calculateTotals } from '../utils/calculations';
+import { formatIndianCurrency } from '../utils/formatters';
 
 interface CashInHandSummaryProps {
   dayBookRecord: DayBookRecord | null;
+  previousDayBookRecord: DayBookRecord | null;
   dailyRecord: DailyRecord | null;
 }
 
-export function CashInHandSummary({ dayBookRecord, dailyRecord }: CashInHandSummaryProps) {
+export function CashInHandSummary({ dayBookRecord, previousDayBookRecord, dailyRecord }: CashInHandSummaryProps) {
   if (!dayBookRecord || !dailyRecord) {
     return null; // Don't render if data is not available
   }
 
-  const dayBookTotals = calculateTotals(dayBookRecord);
+  const dayBookTotals = calculateTotals(dayBookRecord, previousDayBookRecord);
   const totalPaymentsReceived = dailyRecord.paymentsReceived.reduce((sum, p) => sum + p.amount, 0);
+  
   const cashInHand = dayBookTotals.dayBalance + totalPaymentsReceived;
 
   return (
@@ -27,19 +30,19 @@ export function CashInHandSummary({ dayBookRecord, dailyRecord }: CashInHandSumm
       </View>
 
       <View style={styles.calculationRow}>
-        <Text style={styles.calculationLabel}>Day Balance (from Day Book)</Text>
-        <Text style={styles.calculationValue}>₹{dayBookTotals.dayBalance.toFixed(2)}</Text>
+        <Text style={styles.calculationLabel}>Day Balance</Text>
+        <Text style={styles.calculationValue}>{formatIndianCurrency(dayBookTotals.dayBalance)}</Text>
       </View>
 
       <View style={styles.calculationRow}>
-        <Text style={styles.calculationLabel}>+ Total Payments Received</Text>
-        <Text style={styles.calculationValue}>₹{totalPaymentsReceived.toFixed(2)}</Text>
+        <Text style={styles.calculationLabel}>+ Today's Payments Received</Text>
+        <Text style={styles.calculationValue}>{formatIndianCurrency(totalPaymentsReceived)}</Text>
       </View>
 
       <View style={[styles.calculationRow, styles.finalRow]}>
         <Text style={styles.finalLabel}>= Final Cash in Hand</Text>
         <Text style={[styles.finalValue, cashInHand < 0 && styles.negativeValue]}>
-          ₹{cashInHand.toFixed(2)}
+          {formatIndianCurrency(cashInHand)}
         </Text>
       </View>
     </Card>

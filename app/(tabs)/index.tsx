@@ -4,26 +4,25 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { format } from 'date-fns';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
-// Import Components
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { DateSelector } from '../../components/DateSelector';
 import { AutoCarryForwardCard } from '../../components/AutoCarryForwardCard';
 import { MachineReadings } from '../../components/MachineReadings';
 import { SalesSection } from '../../components/SalesSection';
+import { OtherSalesSection } from '../../components/OtherSalesSection';
+import { CashTransactionsSection } from '../../components/CashTransactionsSection';
 import { DeductionsSection } from '../../components/DeductionsSection';
 import { ExpensesSection } from '../../components/ExpensesSection';
 import { PaymentSettlement } from '../../components/PaymentSettlement';
 import { SummaryCard } from '../../components/SummaryCard';
 import { SaveButton } from '../../components/SaveButton';
 
-// Import Types and Utils
-import { DayBookRecord, MachineReading, Account } from '../../types/daybook';
+import { DayBookRecord, MachineReading, Account, OtherSale, CashTransaction } from '../../types/daybook';
 import { calculateTotals } from '../../utils/calculations';
 import { saveRecord, getRecord, getPreviousRecord, getAllAccounts } from '../../utils/database';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 
-// Default opening readings for the very first record
 const DEFAULT_OPENING_READINGS = {
   petrol: [697397.11, 108734.96, 556516.9, 255356.06],
   diesel: [3616534.92, 6582107.77, 2190335.56, 4041675.08],
@@ -31,6 +30,7 @@ const DEFAULT_OPENING_READINGS = {
 
 const createNewRecord = (dateKey: string, previousRecord: DayBookRecord | null): DayBookRecord => ({
   date: dateKey,
+  cashCollected: false,
   machines: {
     petrol: DEFAULT_OPENING_READINGS.petrol.map((defaultReading, index) => ({
       id: `P${index + 1}`,
@@ -46,34 +46,55 @@ const createNewRecord = (dateKey: string, previousRecord: DayBookRecord | null):
     })),
   },
   prices: { petrol: 0, diesel: 0 },
+  otherSales: [],
+  cashTransactions: [],
   deductions: { sviSales: [], sales0332: [], creditSales: [] },
   expenses: { gasCommissions: [], additionalExpenses: [], gasTesting: { petrolTestLitres: 10, dieselTestLitres: 20 } },
-  payments: { atmSale: 0, phonePeSale: 0, paytmSale: 0, cashDeposit: 0 },
+  payments: { atmSale: 0, phonePeSale: 0, paytmSale: 0, cashDeposits: [] },
 });
 
 const normalizeRecord = (loadedRecord: Partial<DayBookRecord>, defaultRecord: DayBookRecord): DayBookRecord => {
-  return {
+  const normalized = {
     ...defaultRecord,
     ...loadedRecord,
+    cashCollected: loadedRecord.cashCollected ?? defaultRecord.cashCollected,
     machines: {
       petrol: defaultRecord.machines.petrol.map(defaultMachine => {
         const loadedMachine = loadedRecord.machines?.petrol.find(m => m.id === defaultMachine.id);
-        return { ...defaultMachine, ...loadedMachine };
+        // DEFINITIVE FIX: Ensure the carried-over openingReading is always prioritized.
+        return { 
+          ...defaultMachine, 
+          ...loadedMachine,
+          openingReading: defaultMachine.openingReading 
+        };
       }),
       diesel: defaultRecord.machines.diesel.map(defaultMachine => {
         const loadedMachine = loadedRecord.machines?.diesel.find(m => m.id === defaultMachine.id);
-        return { ...defaultMachine, ...loadedMachine };
+        // DEFINITIVE FIX: Ensure the carried-over openingReading is always prioritized.
+        return { 
+            ...defaultMachine, 
+            ...loadedMachine,
+            openingReading: defaultMachine.openingReading 
+        };
       }),
     },
     prices: { ...defaultRecord.prices, ...loadedRecord.prices },
+    otherSales: loadedRecord.otherSales || defaultRecord.otherSales,
+    cashTransactions: loadedRecord.cashTransactions || defaultRecord.cashTransactions,
     deductions: { ...defaultRecord.deductions, ...loadedRecord.deductions },
     expenses: { 
       ...defaultRecord.expenses, 
       ...loadedRecord.expenses,
       gasTesting: { ...defaultRecord.expenses.gasTesting, ...loadedRecord.expenses?.gasTesting },
     },
-    payments: { ...defaultRecord.payments, ...loadedRecord.payments },
+    payments: {
+        atmSale: loadedRecord.payments?.atmSale ?? defaultRecord.payments.atmSale,
+        phonePeSale: loadedRecord.payments?.phonePeSale ?? defaultRecord.payments.phonePeSale,
+        paytmSale: loadedRecord.payments?.paytmSale ?? defaultRecord.payments.paytmSale,
+        cashDeposits: loadedRecord.payments?.cashDeposits ?? [],
+    },
   };
+  return normalized;
 };
 
 export default function DayBookScreen() {
@@ -84,11 +105,10 @@ export default function DayBookScreen() {
   
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [record, setRecord] = useState<DayBookRecord | null>(null);
-  const [previousDayMachines, setPreviousDayMachines] = useState<{ petrol: MachineReading[]; diesel: MachineReading[]; } | null>(null);
+  const [previousRecord, setPreviousRecord] = useState<DayBookRecord | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Effect to handle date changes from other screens (e.g., History)
   useEffect(() => {
     if (params.date && typeof params.date === 'string') {
       const newSelectedDate = new Date(params.date);
@@ -110,13 +130,13 @@ export default function DayBookScreen() {
     const dateKey = format(selectedDate, 'yyyy-MM-dd');
     
     try {
-      const [existingRecord, previousRecord, allAccounts] = await Promise.all([
+      const [existingRecord, prevRecord, allAccounts] = await Promise.all([
         getRecord(dateKey),
         getPreviousRecord(dateKey),
         getAllAccounts(),
       ]);
       
-      const defaultRecord = createNewRecord(dateKey, previousRecord);
+      const defaultRecord = createNewRecord(dateKey, prevRecord);
       
       if (existingRecord) {
         const normalized = normalizeRecord(existingRecord, defaultRecord);
@@ -125,7 +145,7 @@ export default function DayBookScreen() {
         setRecord(defaultRecord);
       }
       
-      setPreviousDayMachines(previousRecord?.machines || null);
+      setPreviousRecord(prevRecord);
       setAccounts(allAccounts);
     } catch (error: any) {
       console.error('Error loading Day Book data:', error);
@@ -158,6 +178,14 @@ export default function DayBookScreen() {
     });
   };
 
+  const handleUpdateOtherSales = (otherSales: OtherSale[]) => {
+    updateRecord({ otherSales });
+  };
+
+  const handleUpdateCashTransactions = (cashTransactions: CashTransaction[]) => {
+    updateRecord({ cashTransactions });
+  };
+
   const handleSave = async () => {
     if (!record) return;
     try {
@@ -182,7 +210,7 @@ export default function DayBookScreen() {
     );
   }
 
-  const totals = calculateTotals(record);
+  const totals = calculateTotals(record, previousRecord);
 
   return (
     <SafeAreaProvider>
@@ -196,19 +224,24 @@ export default function DayBookScreen() {
               />
               
               <AutoCarryForwardCard 
-                previousMachines={previousDayMachines}
+                previousMachines={previousRecord?.machines || null}
               />
 
               <MachineReadings 
                 machines={record.machines}
                 onUpdateMachine={updateMachineReading}
-                isOpeningEditable={!previousDayMachines}
+                isOpeningEditable={!previousRecord}
               />
 
               <SalesSection 
                 prices={record.prices}
                 totals={totals}
                 onUpdatePrices={(prices) => updateRecord({ prices })}
+              />
+
+              <OtherSalesSection
+                otherSales={record.otherSales}
+                onUpdateOtherSales={handleUpdateOtherSales}
               />
 
               <DeductionsSection 
@@ -226,13 +259,23 @@ export default function DayBookScreen() {
                 onUpdateExpenses={(expenses) => updateRecord({ expenses })}
               />
 
+              <CashTransactionsSection
+                cashTransactions={record.cashTransactions}
+                accounts={accounts}
+                onUpdateCashTransactions={handleUpdateCashTransactions}
+              />
+
               <PaymentSettlement 
                 payments={record.payments}
                 totals={totals}
                 onUpdatePayments={(payments) => updateRecord({ payments })}
               />
 
-              <SummaryCard totals={totals} />
+              <SummaryCard 
+                totals={totals}
+                cashCollected={record.cashCollected || false}
+                onCashCollectedChange={(value) => updateRecord({ cashCollected: value })}
+              />
               
               <SaveButton onSave={handleSave} />
             </View>

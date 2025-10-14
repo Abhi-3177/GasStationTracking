@@ -1,80 +1,81 @@
 import { DayBookRecord, CalculatedTotals } from '../types/daybook';
 
-export function calculateTotals(record: DayBookRecord): CalculatedTotals {
-  // Calculate litres sold
-  const petrolLitres = record.machines.petrol.reduce(
-    (total, machine) => total + Math.max(0, machine.closingReading - machine.openingReading),
+export function calculateTotals(record: DayBookRecord, previousRecord: DayBookRecord | null): CalculatedTotals {
+  // Ultra-defensive checks to prevent crashes from malformed or old records.
+  const pLitres = (record?.machines?.petrol || []).reduce(
+    (total, machine) => total + Math.max(0, (machine?.closingReading || 0) - (machine?.openingReading || 0)),
     0
   );
   
-  const dieselLitres = record.machines.diesel.reduce(
-    (total, machine) => total + Math.max(0, machine.closingReading - machine.openingReading),
+  const dLitres = (record?.machines?.diesel || []).reduce(
+    (total, machine) => total + Math.max(0, (machine?.closingReading || 0) - (machine?.openingReading || 0)),
     0
   );
 
-  // Calculate sales and round up to the next whole number
-  const petrolSale = Math.ceil(petrolLitres * record.prices.petrol);
-  const dieselSale = Math.ceil(dieselLitres * record.prices.diesel);
-  const totalSale = petrolSale + dieselSale;
+  const petrolPrice = record?.prices?.petrol || 0;
+  const dieselPrice = record?.prices?.diesel || 0;
 
-  // Calculate deductions
-  const totalSviSales = record.deductions.sviSales.reduce(
-    (total, svi) => total + svi.amount,
-    0
-  );
+  const petrolSale = Math.ceil(pLitres * petrolPrice);
+  const dieselSale = Math.ceil(dLitres * dieselPrice);
   
-  const totalSales0332 = record.deductions.sales0332.reduce(
-    (total, sale) => total + sale.amount,
-    0
-  );
+  const totalOtherSales = (record?.otherSales || []).reduce((total, sale) => total + (sale?.amount || 0), 0);
   
-  const totalCreditSales = record.deductions.creditSales.reduce(
-    (total, credit) => total + credit.amount,
-    0
-  );
-  
-  const totalDeductions = totalSviSales + totalSales0332 + totalCreditSales;
-  const cashSale = totalSale - totalDeductions;
+  const totalSale = petrolSale + dieselSale + totalOtherSales;
 
-  // Calculate expenses
-  const totalGasCommissions = record.expenses.gasCommissions.reduce(
-    (total, commission) => total + commission.amount,
-    0
-  );
-
-  const totalAdditionalExpenses = record.expenses.additionalExpenses.reduce(
-    (total, expense) => total + expense.amount,
-    0
-  );
+  const totalSviSales = (record?.deductions?.sviSales || []).reduce((total, svi) => total + (svi?.amount || 0), 0);
+  const totalSales0332 = (record?.deductions?.sales0332 || []).reduce((total, sale) => total + (sale?.amount || 0), 0);
+  const totalCreditSales = (record?.deductions?.creditSales || []).reduce((total, credit) => total + (credit?.amount || 0), 0);
   
+  // Correctly sum all credit-like deductions for an accurate total credit value.
+  const totalCredit = totalSviSales + totalSales0332 + totalCreditSales;
+  
+  const cashSale = totalSale - totalCredit;
+
+  const totalGasCommissions = (record?.expenses?.gasCommissions || []).reduce((total, commission) => total + (commission?.amount || 0), 0);
+  const totalAdditionalExpenses = (record?.expenses?.additionalExpenses || []).reduce((total, expense) => total + (expense?.amount || 0), 0);
+  
+  const gasTesting = record?.expenses?.gasTesting || { petrolTestLitres: 0, dieselTestLitres: 0 };
   const gasTestingExpense = 
-    (record.expenses.gasTesting.petrolTestLitres * record.prices.petrol) +
-    (record.expenses.gasTesting.dieselTestLitres * record.prices.diesel);
+    ((gasTesting?.petrolTestLitres || 0) * petrolPrice) +
+    ((gasTesting?.dieselTestLitres || 0) * dieselPrice);
   
   const totalExpenses = totalGasCommissions + totalAdditionalExpenses + gasTestingExpense;
   const netSale = cashSale - totalExpenses;
 
-  // Calculate payments
+  const totalCashDeposits = (record?.payments?.cashDeposits || []).reduce((total, entry) => total + (entry?.amount || 0), 0);
+
   const totalPayments = 
-    record.payments.atmSale + 
-    record.payments.phonePeSale + 
-    record.payments.paytmSale + 
-    record.payments.cashDeposit;
+    (record?.payments?.atmSale || 0) + 
+    (record?.payments?.phonePeSale || 0) + 
+    (record?.payments?.paytmSale || 0) + 
+    totalCashDeposits;
 
-  const dayBalance = netSale - totalPayments;
+  const totalCashIn = (record?.cashTransactions || []).reduce((total, trans) => total + (trans?.type === 'in' ? (trans?.amount || 0) : 0), 0);
+  const totalCashOut = (record?.cashTransactions || []).reduce((total, trans) => total + (trans?.type === 'out' ? (trans?.amount || 0) : 0), 0);
 
+  const previousDayBalance = 
+    previousRecord && !previousRecord.cashCollected 
+      ? calculateTotals(previousRecord, null).dayBalance 
+      : 0;
+
+  const dayBalance = netSale - totalPayments + totalCashIn - totalCashOut + previousDayBalance;
+
+  // Final safeguard to ensure all returned values are valid numbers.
   return {
-    petrolLitres,
-    dieselLitres,
-    petrolSale,
-    dieselSale,
-    totalSale,
-    totalDeductions,
-    cashSale,
-    gasTestingExpense,
-    totalExpenses,
-    netSale,
-    totalPayments,
-    dayBalance,
+    petrolLitres: Number(pLitres) || 0,
+    dieselLitres: Number(dLitres) || 0,
+    petrolSale: Number(petrolSale) || 0,
+    dieselSale: Number(dieselSale) || 0,
+    totalSale: Number(totalSale) || 0,
+    totalDeductions: Number(totalCredit) || 0, // Using the new accurate totalCredit
+    cashSale: Number(cashSale) || 0,
+    gasTestingExpense: Number(gasTestingExpense) || 0,
+    totalExpenses: Number(totalExpenses) || 0,
+    netSale: Number(netSale) || 0,
+    totalPayments: Number(totalPayments) || 0,
+    totalCashIn: Number(totalCashIn) || 0,
+    totalCashOut: Number(totalCashOut) || 0,
+    previousDayBalance: Number(previousDayBalance) || 0,
+    dayBalance: Number(dayBalance) || 0,
   };
 }

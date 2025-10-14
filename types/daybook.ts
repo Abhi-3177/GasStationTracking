@@ -5,6 +5,20 @@ export interface MachineReading {
   closingReading: number;
 }
 
+export interface OtherSale {
+  id: string;
+  name: string;
+  amount: number;
+}
+
+export interface CashTransaction {
+  id: string;
+  accountId?: string;
+  name: string;
+  amount: number;
+  type: 'in' | 'out'; // 'in' for received, 'out' for given
+}
+
 export interface CreditSale {
   id: string;
   name: string;
@@ -14,6 +28,8 @@ export interface CreditSale {
   amount: number;
   lastEdited: 'litres' | 'amount';
   vehicleNumber?: string;
+  receiptNumber?: string; // New field
+  description?: string; // For bulk upload
 }
 
 export interface SviSale {
@@ -25,6 +41,7 @@ export interface SviSale {
   amount: number;
   lastEdited: 'litres' | 'amount';
   vehicleNumber?: string;
+  receiptNumber?: string; // New field
 }
 
 export interface Sale0332 {
@@ -36,6 +53,7 @@ export interface Sale0332 {
   amount: number;
   lastEdited: 'litres' | 'amount';
   vehicleNumber?: string;
+  receiptNumber?: string; // New field
 }
 
 export interface GasCommission {
@@ -50,8 +68,15 @@ export interface AdditionalExpense {
   amount: number;
 }
 
+export interface CashDepositEntry {
+  id: string;
+  amount: number;
+  description?: string;
+}
+
 export interface DayBookRecord {
   date: string;
+  cashCollected?: boolean;
   machines: {
     petrol: MachineReading[];
     diesel: MachineReading[];
@@ -60,6 +85,8 @@ export interface DayBookRecord {
     petrol: number;
     diesel: number;
   };
+  otherSales: OtherSale[];
+  cashTransactions: CashTransaction[];
   deductions: {
     sviSales: SviSale[];
     sales0332: Sale0332[];
@@ -77,7 +104,7 @@ export interface DayBookRecord {
     atmSale: number;
     phonePeSale: number;
     paytmSale: number;
-    cashDeposit: number;
+    cashDeposits: CashDepositEntry[];
   };
 }
 
@@ -93,6 +120,9 @@ export interface CalculatedTotals {
   totalExpenses: number;
   netSale: number;
   totalPayments: number;
+  totalCashIn: number;
+  totalCashOut: number;
+  previousDayBalance: number;
   dayBalance: number;
 }
 
@@ -100,7 +130,7 @@ export interface BalanceEntry {
   id: string;
   date: string;
   description: string;
-  type: 'credit' | 'debit'; // credit = advance from customer, debit = outstanding balance
+  type: 'credit' | 'debit';
   amount: number;
 }
 
@@ -113,14 +143,14 @@ export interface Account {
   address?: string;
   balanceEntries: BalanceEntry[];
   createdAt: string;
+  currentBalance?: number;
+  lastPaymentDate?: string | null;
 }
-
-// --- New Daily Record Types ---
 
 export interface BankReconciliationEntry {
   type: 'atmSale' | 'phonePeSale' | 'paytmSale' | 'cashDeposit';
   expected: number;
-  actual: number; // <-- Added this field
+  actual: number;
   matched: boolean;
 }
 
@@ -130,6 +160,7 @@ export interface PaymentReceived {
   accountId: string;
   amount: number;
   description: string;
+  receiptNumber?: string; // New field
   user_id: string;
   created_at: string;
 }
@@ -139,4 +170,35 @@ export interface DailyRecord {
   user_id: string;
   bankReconciliation: BankReconciliationEntry[];
   paymentsReceived: PaymentReceived[];
+}
+
+export interface Transaction {
+  id: string;
+  date: string;
+  description: string;
+  type: 'credit' | 'debit';
+  amount: number;
+  settlementStatus?: 'unsettled' | 'partially-settled' | 'fully-settled';
+  settledAmount?: number;
+  runningBalance?: number;
+}
+
+export interface StockOrder {
+    id: string;
+    user_id: string;
+    date: string;
+    fuel_type: 'petrol' | 'diesel';
+    litres: number;
+    created_at: string;
+}
+
+export interface AgedDebtor {
+  account_id: string;
+  account_name: string;
+  account_type: string;
+  total_outstanding: number;
+  days_0_30: number;
+  days_31_60: number;
+  days_61_90: number;
+  days_over_90: number;
 }

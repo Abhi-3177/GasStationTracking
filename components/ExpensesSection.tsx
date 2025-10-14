@@ -4,6 +4,7 @@ import { TrendingDown, Plus, Trash2 } from 'lucide-react-native';
 import { Card } from './Card';
 import { NumberInput } from './NumberInput';
 import { DayBookRecord, CalculatedTotals, GasCommission, AdditionalExpense } from '../types/daybook';
+import { formatIndianCurrency } from '../utils/formatters';
 
 interface ExpensesSectionProps {
   expenses: DayBookRecord['expenses'];
@@ -119,17 +120,17 @@ export function ExpensesSection({ expenses, prices, totals, onUpdateExpenses }: 
           <View style={styles.testingInput}><Text style={styles.inputLabel}>Diesel Test (L)</Text><NumberInput value={expenses.gasTesting.dieselTestLitres} onChangeValue={v => onUpdateExpenses({ ...expenses, gasTesting: { ...expenses.gasTesting, dieselTestLitres: v } })} placeholder="0.00" precision={2} /></View>
         </View>
         <View style={styles.testingCalculation}>
-          <Text style={styles.calculationText}>({expenses.gasTesting.petrolTestLitres.toFixed(2)} × ₹{prices.petrol.toFixed(3)}) + ({expenses.gasTesting.dieselTestLitres.toFixed(2)} × ₹{prices.diesel.toFixed(3)})</Text>
-          <Text style={styles.calculationResult}>= ₹{totals.gasTestingExpense.toFixed(2)}</Text>
+          <Text style={styles.calculationText}>({expenses.gasTesting.petrolTestLitres.toFixed(2)} × {formatIndianCurrency(prices.petrol)}) + ({expenses.gasTesting.dieselTestLitres.toFixed(2)} × {formatIndianCurrency(prices.diesel)})</Text>
+          <Text style={styles.calculationResult}>= {formatIndianCurrency(totals.gasTestingExpense)}</Text>
         </View>
       </View>
       
       <View style={styles.summarySection}>
-        <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Total Gas Commission:</Text><Text style={styles.summaryValue}>₹{totalGasCommissions.toFixed(2)}</Text></View>
-        <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Total Additional Expenses:</Text><Text style={styles.summaryValue}>₹{totalAdditionalExpenses.toFixed(2)}</Text></View>
-        <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Gas Testing Expense:</Text><Text style={styles.summaryValue}>₹{totals.gasTestingExpense.toFixed(2)}</Text></View>
-        <View style={[styles.summaryRow, styles.totalRow]}><Text style={styles.totalLabel}>Total Expenses:</Text><Text style={styles.totalValue}>₹{totals.totalExpenses.toFixed(2)}</Text></View>
-        <View style={[styles.summaryRow, styles.netSaleRow]}><Text style={styles.netSaleLabel}>Net Sale:</Text><Text style={styles.netSaleValue}>₹{totals.netSale.toFixed(2)}</Text></View>
+        <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Total Gas Commission:</Text><Text style={styles.summaryValue}>{formatIndianCurrency(totalGasCommissions)}</Text></View>
+        <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Total Additional Expenses:</Text><Text style={styles.summaryValue}>{formatIndianCurrency(totalAdditionalExpenses)}</Text></View>
+        <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Gas Testing Expense:</Text><Text style={styles.summaryValue}>{formatIndianCurrency(totals.gasTestingExpense)}</Text></View>
+        <View style={[styles.summaryRow, styles.totalRow]}><Text style={styles.totalLabel}>Total Expenses:</Text><Text style={styles.totalValue}>{formatIndianCurrency(totals.totalExpenses)}</Text></View>
+        <View style={[styles.summaryRow, styles.netSaleRow]}><Text style={styles.netSaleLabel}>Net Sale:</Text><Text style={styles.netSaleValue}>{formatIndianCurrency(totals.netSale)}</Text></View>
       </View>
     </Card>
   );
@@ -139,7 +140,7 @@ const ExpenseGroup = ({ title, total, children }: { title: string, total: number
   <View style={styles.commissionSection}>
     <View style={styles.commissionHeader}><Text style={styles.sectionTitle}>{title}</Text></View>
     {children}
-    {total > 0 && <View style={styles.commissionTotal}><Text style={styles.commissionTotalLabel}>Total:</Text><Text style={styles.commissionTotalValue}>₹{total.toFixed(2)}</Text></View>}
+    {total > 0 && <View style={styles.commissionTotal}><Text style={styles.commissionTotalLabel}>Total:</Text><Text style={styles.commissionTotalValue}>{formatIndianCurrency(total)}</Text></View>}
   </View>
 );
 

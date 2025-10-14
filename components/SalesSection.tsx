@@ -4,6 +4,7 @@ import { DollarSign } from 'lucide-react-native';
 import { Card } from './Card';
 import { NumberInput } from './NumberInput';
 import { CalculatedTotals } from '../types/daybook';
+import { formatIndianCurrency } from '../utils/formatters';
 
 interface SalesSectionProps {
   prices: {
@@ -34,7 +35,7 @@ export function SalesSection({ prices, totals, onUpdatePrices }: SalesSectionPro
               placeholder="0.000"
               precision={3}
             />
-            <Text style={styles.priceDisplay}>₹{prices.petrol.toFixed(3)}/L</Text>
+            <Text style={styles.priceDisplay}>{formatIndianCurrency(prices.petrol)}/L</Text>
           </View>
           
           <View style={styles.priceInput}>
@@ -45,7 +46,7 @@ export function SalesSection({ prices, totals, onUpdatePrices }: SalesSectionPro
               placeholder="0.000"
               precision={3}
             />
-            <Text style={styles.priceDisplay}>₹{prices.diesel.toFixed(3)}/L</Text>
+            <Text style={styles.priceDisplay}>{formatIndianCurrency(prices.diesel)}/L</Text>
           </View>
         </View>
       </View>
@@ -55,17 +56,17 @@ export function SalesSection({ prices, totals, onUpdatePrices }: SalesSectionPro
         
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Petrol Sale:</Text>
-          <Text style={styles.summaryValue}>₹{totals.petrolSale.toFixed(2)}</Text>
+          <Text style={styles.summaryValue}>{formatIndianCurrency(totals.petrolSale)}</Text>
         </View>
         
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Diesel Sale:</Text>
-          <Text style={styles.summaryValue}>₹{totals.dieselSale.toFixed(2)}</Text>
+          <Text style={styles.summaryValue}>{formatIndianCurrency(totals.dieselSale)}</Text>
         </View>
         
         <View style={[styles.summaryRow, styles.totalRow]}>
           <Text style={styles.totalLabel}>Total Sale:</Text>
-          <Text style={styles.totalValue}>₹{totals.totalSale.toFixed(2)}</Text>
+          <Text style={styles.totalValue}>{formatIndianCurrency(totals.totalSale)}</Text>
         </View>
       </View>
     </Card>

@@ -21,12 +21,17 @@ export function AccountAutocomplete({
   const [isFocused, setIsFocused] = useState(false);
 
   useEffect(() => {
-    if (value.length > 0 && isFocused) {
-      setFilteredAccounts(
-        accounts.filter(account =>
-          account.name.toLowerCase().includes(value.toLowerCase())
-        )
-      );
+    if (value && value.length > 0 && isFocused) {
+      const trimmedValue = value.trim().toLowerCase();
+      if (trimmedValue) {
+        setFilteredAccounts(
+          accounts.filter(account =>
+            account.name.trim().toLowerCase().startsWith(trimmedValue)
+          )
+        );
+      } else {
+        setFilteredAccounts([]);
+      }
     } else {
       setFilteredAccounts([]);
     }
@@ -45,7 +50,7 @@ export function AccountAutocomplete({
         value={value}
         onChangeText={onValueChange}
         onFocus={() => setIsFocused(true)}
-        onBlur={() => setTimeout(() => setIsFocused(false), 200)} // Delay to allow press
+        onBlur={() => setTimeout(() => setIsFocused(false), 300)} // Increased delay
         placeholder={placeholder}
       />
       {isFocused && filteredAccounts.length > 0 && (
@@ -56,7 +61,7 @@ export function AccountAutocomplete({
             renderItem={({ item }) => (
               <TouchableOpacity
                 style={styles.dropdownItem}
-                onPress={() => handleSelect(item)}
+                onPressIn={() => handleSelect(item)} // Use onPressIn for reliability
               >
                 <Text style={styles.dropdownItemText}>{item.name}</Text>
               </TouchableOpacity>

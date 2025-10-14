@@ -1,13 +1,27 @@
-import { Tabs, Redirect } from 'expo-router';
-import { BookOpen, Users, History, ClipboardList, Settings } from 'lucide-react-native';
+import { Tabs, useRouter } from 'expo-router';
+import { BookOpen, History, ClipboardList, Settings, Users, BarChart2, PieChart } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { Header } from '../../components/Header';
+import { useEffect } from 'react';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
 
 export default function TabLayout() {
-  const { session, signOut } = useAuth();
+  const { session, signOut, isLoading } = useAuth();
+  const router = useRouter();
 
-  if (!session) {
-    return <Redirect href="/" />;
+  useEffect(() => {
+    if (isLoading) return;
+    if (!session) {
+      router.replace('/(auth)/login');
+    }
+  }, [session, isLoading]);
+
+  if (isLoading || !session) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#2563eb" />
+      </View>
+    );
   }
 
   return (
@@ -26,9 +40,14 @@ export default function TabLayout() {
         header: () => {
           let title = 'Day Book';
           if (route.name === 'daily-record') title = 'Daily Record';
-          if (route.name === 'accounts') title = 'Accounts';
           if (route.name === 'history') title = 'History';
+          if (route.name === 'accounts') title = 'Accounts';
+          if (route.name === 'reports') title = 'Reports';
+          if (route.name === 'analytical') title = 'Analytics';
           if (route.name === 'settings') title = 'Settings';
+          
+          if (route.name === 'accounts') return null;
+          
           return <Header title={title} showLogout={true} onLogout={signOut} />;
         },
       })}
@@ -54,6 +73,20 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size }) => <Users color={color} size={size} />,
         }}
       />
+       <Tabs.Screen
+        name="reports"
+        options={{
+          title: 'Reports',
+          tabBarIcon: ({ color, size }) => <BarChart2 color={color} size={size} />,
+        }}
+      />
+       <Tabs.Screen
+        name="analytical"
+        options={{
+          title: 'Analytics',
+          tabBarIcon: ({ color, size }) => <PieChart color={color} size={size} />,
+        }}
+      />
       <Tabs.Screen
         name="history"
         options={{
@@ -71,3 +104,12 @@ export default function TabLayout() {
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#f8fafc',
+    }
+});

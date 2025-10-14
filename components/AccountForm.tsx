@@ -1,422 +1,215 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView } from 'react-native';
-import { format } from 'date-fns';
-import { Plus, Trash2, TrendingUp, TrendingDown } from 'lucide-react-native';
+import React, { useState, useEffect } from 'react';
+import { Modal, View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { X, User, Building, Phone, MapPin, Plus, Trash2 } from 'lucide-react-native';
 import { Account, BalanceEntry } from '../types/daybook';
+import { saveAccount } from '../utils/database';
+import { useNotification } from '../context/NotificationContext';
 import { NumberInput } from './NumberInput';
 import { DateSelector } from './DateSelector';
+import { format } from 'date-fns';
 
 interface AccountFormProps {
-  initialData?: Account | null;
-  onSave: (data: Omit<Account, 'id' | 'createdAt' | 'user_id'>) => void;
-  onCancel: () => void;
+  visible: boolean;
+  onClose: () => void;
+  onSave: () => void;
+  account: Account | null;
+  defaultType?: 'factory' | 'transporter';
 }
 
-const BalanceEntriesManager = ({ entries, setEntries }: { entries: BalanceEntry[], setEntries: (entries: BalanceEntry[]) => void }) => {
-  const [newEntry, setNewEntry] = useState({
-    date: new Date(),
-    description: '',
-    amount: 0,
-    type: 'debit' as 'credit' | 'debit',
-  });
+const createNewAccount = (type: 'factory' | 'transporter' = 'factory'): Omit<Account, 'id' | 'createdAt' | 'user_id'> => ({
+  name: '',
+  type: type,
+  contact: '',
+  address: '',
+  balanceEntries: [{ id: Date.now().toString(), date: format(new Date(), 'yyyy-MM-dd'), description: 'Opening Balance', type: 'debit', amount: 0 }],
+});
 
-  const addEntry = () => {
-    if (!newEntry.description.trim() || newEntry.amount <= 0) {
-      alert('Please enter a valid description and amount.');
-      return;
+export function AccountForm({ visible, onClose, onSave, account, defaultType = 'factory' }: AccountFormProps) {
+  const { showNotification } = useNotification();
+  const [formData, setFormData] = useState(createNewAccount(defaultType));
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      if (account) {
+        setFormData({
+          name: account.name || '',
+          type: account.type || 'factory',
+          contact: account.contact || '',
+          address: account.address || '',
+          balanceEntries: account.balanceEntries?.length > 0 ? account.balanceEntries : createNewAccount().balanceEntries,
+        });
+      } else {
+        setFormData(createNewAccount(defaultType));
+      }
     }
-    const entry: BalanceEntry = {
+  }, [account, visible, defaultType]);
+
+  const handleUpdate = (field: keyof typeof formData, value: any) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleBalanceEntryUpdate = (id: string, updates: Partial<BalanceEntry>) => {
+    const updatedEntries = formData.balanceEntries.map(entry =>
+      entry.id === id ? { ...entry, ...updates } : entry
+    );
+    handleUpdate('balanceEntries', updatedEntries);
+  };
+
+  const addBalanceEntry = () => {
+    const newEntry: BalanceEntry = {
       id: Date.now().toString(),
-      date: newEntry.date.toISOString(),
-      description: newEntry.description,
-      type: newEntry.type,
-      amount: newEntry.amount,
+      date: format(new Date(), 'yyyy-MM-dd'),
+      description: '',
+      type: 'debit',
+      amount: 0,
     };
-    setEntries([...entries, entry]);
-    setNewEntry({ date: new Date(), description: '', amount: 0, type: 'debit' });
+    handleUpdate('balanceEntries', [...formData.balanceEntries, newEntry]);
   };
 
-  const removeEntry = (id: string) => {
-    setEntries(entries.filter(e => e.id !== id));
+  const removeBalanceEntry = (id: string) => {
+    if (formData.balanceEntries.length > 1) {
+      handleUpdate('balanceEntries', formData.balanceEntries.filter(entry => entry.id !== id));
+    } else {
+      showNotification('At least one balance entry is required.', 'info');
+    }
   };
 
-  return (
-    <View style={styles.managerContainer}>
-      <Text style={styles.managerTitle}>Opening Balance Entries</Text>
-      
-      {entries.map(entry => (
-        <View key={entry.id} style={styles.entryRow}>
-          <View style={styles.entryInfo}>
-            <Text style={styles.entryDescription}>{entry.description}</Text>
-            <Text style={styles.entryDate}>{format(new Date(entry.date), 'PPP')}</Text>
-          </View>
-          <Text style={entry.type === 'credit' ? styles.creditAmount : styles.debitAmount}>
-            {entry.type === 'credit' ? '+' : '-'}₹{entry.amount.toFixed(2)}
-          </Text>
-          <TouchableOpacity onPress={() => removeEntry(entry.id)} style={styles.removeButton}>
-            <Trash2 size={16} color="#dc2626" />
-          </TouchableOpacity>
-        </View>
-      ))}
-
-      <View style={styles.addEntryForm}>
-        <Text style={styles.formSectionTitle}>Add New Balance Entry</Text>
-        <DateSelector 
-            selectedDate={newEntry.date}
-            onDateChange={date => setNewEntry({ ...newEntry, date })}
-        />
-        <TextInput
-          style={styles.entryTextInput}
-          value={newEntry.description}
-          onChangeText={text => setNewEntry({ ...newEntry, description: text })}
-          placeholder="Description (e.g., Previous due)"
-        />
-        <View style={styles.amountTypeRow}>
-            <View style={{flex: 1}}>
-                <NumberInput
-                    value={newEntry.amount}
-                    onChangeValue={value => setNewEntry({ ...newEntry, amount: value })}
-                    placeholder="Amount"
-                    precision={2}
-                />
-            </View>
-            <View style={styles.entryTypeSelector}>
-                <TouchableOpacity
-                    style={[styles.entryTypeButton, newEntry.type === 'debit' && styles.entryTypeActiveDebit]}
-                    onPress={() => setNewEntry({ ...newEntry, type: 'debit' })}
-                >
-                    <TrendingDown size={18} color={newEntry.type === 'debit' ? '#fff' : '#dc2626'} />
-                    <View style={styles.typeButtonTextBox}>
-                        <Text style={[styles.entryTypeText, newEntry.type === 'debit' && styles.entryTypeTextActive]}>Debit</Text>
-                        <Text style={[styles.helperText, newEntry.type === 'debit' && styles.entryTypeTextActive]}>Customer Owes</Text>
-                    </View>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[styles.entryTypeButton, newEntry.type === 'credit' && styles.entryTypeActiveCredit]}
-                    onPress={() => setNewEntry({ ...newEntry, type: 'credit' })}
-                >
-                    <TrendingUp size={18} color={newEntry.type === 'credit' ? '#fff' : '#059669'} />
-                    <View style={styles.typeButtonTextBox}>
-                        <Text style={[styles.entryTypeText, newEntry.type === 'credit' && styles.entryTypeTextActive]}>Credit</Text>
-                        <Text style={[styles.helperText, newEntry.type === 'credit' && styles.entryTypeTextActive]}>Advance Paid</Text>
-                    </View>
-                </TouchableOpacity>
-            </View>
-        </View>
-        <TouchableOpacity onPress={addEntry} style={styles.addEntryButton}>
-          <Plus size={16} color="#ffffff" />
-          <Text style={styles.addEntryButtonText}>Add Entry</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-};
-
-export function AccountForm({ initialData, onSave, onCancel }: AccountFormProps) {
-  const [formData, setFormData] = useState({
-    name: initialData?.name || '',
-    type: initialData?.type || ('factory' as 'factory' | 'transporter'),
-    contact: initialData?.contact || '',
-    address: initialData?.address || '',
-    balanceEntries: initialData?.balanceEntries || [],
-  });
-
-  const handleSave = () => {
-    if (!formData.name.trim()) {
-      alert('Please enter account name');
+  const handleSave = async () => {
+    if (!formData.name) {
+      showNotification('Account name is required.', 'error');
       return;
     }
-    onSave(formData);
+    setIsSaving(true);
+    try {
+      const accountToSave = {
+        ...(account || {}), // Includes id if editing
+        ...formData,
+      } as Account;
+      await saveAccount(accountToSave);
+      showNotification(`Account "${formData.name}" saved successfully.`, 'success');
+      onSave();
+    } catch (error: any) {
+      showNotification(`Error saving account: ${error.message}`, 'error');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.formContent}>
-        <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Account Name *</Text>
-          <TextInput
-            style={styles.textInput}
-            value={formData.name}
-            onChangeText={(text) => setFormData({ ...formData, name: text })}
-            placeholder="Enter account name"
-          />
+    <Modal animationType="slide" transparent={false} visible={visible} onRequestClose={onClose}>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>{account ? 'Edit Account' : 'Add New Account'}</Text>
+          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+            <X size={24} color="#6b7280" />
+          </TouchableOpacity>
         </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Account Type</Text>
-          <View style={styles.typeSelector}>
-            <TouchableOpacity
-              style={[styles.typeButton, formData.type === 'factory' && styles.typeButtonActive]}
-              onPress={() => setFormData({ ...formData, type: 'factory' })}
-            >
-              <Text style={[styles.typeButtonText, formData.type === 'factory' && styles.typeButtonTextActive]}>
-                Factory
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.typeButton, formData.type === 'transporter' && styles.typeButtonActive]}
-              onPress={() => setFormData({ ...formData, type: 'transporter' })}
-            >
-              <Text style={[styles.typeButtonText, formData.type === 'transporter' && styles.typeButtonTextActive]}>
-                Transporter
-              </Text>
-            </TouchableOpacity>
+        <ScrollView style={styles.scrollView} keyboardShouldPersistTaps="handled">
+          <View style={styles.form}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}><User size={14} color="#374151" /> Account Name</Text>
+              <TextInput style={styles.input} value={formData.name} onChangeText={text => handleUpdate('name', text)} placeholder="e.g., Surya Transports" />
+            </View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}><Building size={14} color="#374151" /> Account Type</Text>
+              <View style={styles.typeSelector}>
+                <TouchableOpacity style={[styles.typeButton, formData.type === 'factory' && styles.typeButtonActive]} onPress={() => handleUpdate('type', 'factory')}>
+                  <Text style={[styles.typeButtonText, formData.type === 'factory' && styles.typeButtonTextActive]}>Factory</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.typeButton, formData.type === 'transporter' && styles.typeButtonActive]} onPress={() => handleUpdate('type', 'transporter')}>
+                  <Text style={[styles.typeButtonText, formData.type === 'transporter' && styles.typeButtonTextActive]}>Transporter</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}><Phone size={14} color="#374151" /> Contact Number</Text>
+              <TextInput style={styles.input} value={formData.contact} onChangeText={text => handleUpdate('contact', text)} placeholder="Optional" keyboardType="phone-pad" />
+            </View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}><MapPin size={14} color="#374151" /> Address</Text>
+              <TextInput style={[styles.input, styles.textArea]} value={formData.address} onChangeText={text => handleUpdate('address', text)} placeholder="Optional" multiline />
+            </View>
+            
+            <View style={styles.balanceSection}>
+                <Text style={styles.sectionTitle}>Opening Balance</Text>
+                {formData.balanceEntries.map(entry => (
+                    <View key={entry.id} style={styles.balanceEntryRow}>
+                        <View style={styles.balanceInputGroup}>
+                            <Text style={styles.balanceLabel}>Date</Text>
+                            <DateSelector selectedDate={new Date(entry.date)} onDateChange={date => handleBalanceEntryUpdate(entry.id, { date: format(date, 'yyyy-MM-dd') })} buttonStyle={styles.balanceDateButton} />
+                        </View>
+                        <View style={styles.balanceInputGroup}>
+                            <Text style={styles.balanceLabel}>Description</Text>
+                            <TextInput style={styles.input} value={entry.description} onChangeText={text => handleBalanceEntryUpdate(entry.id, { description: text })} />
+                        </View>
+                        <View style={styles.balanceInputGroup}>
+                            <Text style={styles.balanceLabel}>Type</Text>
+                            <View style={styles.typeSelector}>
+                                <TouchableOpacity style={[styles.typeButtonSmall, entry.type === 'debit' && styles.typeButtonActive]} onPress={() => handleBalanceEntryUpdate(entry.id, { type: 'debit' })}>
+                                    <Text style={[styles.typeButtonTextSmall, entry.type === 'debit' && styles.typeButtonTextActive]}>Debit</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={[styles.typeButtonSmall, entry.type === 'credit' && styles.typeButtonActive]} onPress={() => handleBalanceEntryUpdate(entry.id, { type: 'credit' })}>
+                                    <Text style={[styles.typeButtonTextSmall, entry.type === 'credit' && styles.typeButtonTextActive]}>Credit</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                        <View style={styles.balanceInputGroup}>
+                            <Text style={styles.balanceLabel}>Amount</Text>
+                            <NumberInput value={entry.amount} onChangeValue={amount => handleBalanceEntryUpdate(entry.id, { amount })} />
+                        </View>
+                        <TouchableOpacity onPress={() => removeBalanceEntry(entry.id)} style={styles.removeButton}>
+                            <Trash2 size={16} color="#dc2626" />
+                        </TouchableOpacity>
+                    </View>
+                ))}
+                <TouchableOpacity onPress={addBalanceEntry} style={styles.addButton}>
+                    <Plus size={16} color="#2563eb" />
+                    <Text style={styles.addButtonText}>Add Balance Entry</Text>
+                </TouchableOpacity>
+            </View>
           </View>
-        </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Contact Number</Text>
-          <TextInput
-            style={styles.textInput}
-            value={formData.contact}
-            onChangeText={(text) => setFormData({ ...formData, contact: text })}
-            placeholder="Enter contact number"
-            keyboardType="phone-pad"
-          />
-        </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Address</Text>
-          <TextInput
-            style={[styles.textInput, styles.textArea]}
-            value={formData.address}
-            onChangeText={(text) => setFormData({ ...formData, address: text })}
-            placeholder="Enter address"
-            multiline
-            numberOfLines={3}
-          />
-        </View>
-
-        <BalanceEntriesManager
-          entries={formData.balanceEntries}
-          setEntries={(entries) => setFormData({ ...formData, balanceEntries: entries })}
-        />
-
-        <View style={styles.formActions}>
-          <TouchableOpacity onPress={onCancel} style={styles.cancelButton}>
-            <Text style={styles.cancelButtonText}>Cancel</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleSave} style={styles.saveButton}>
-            <Text style={styles.saveButtonText}>
-              {initialData ? 'Update Account' : 'Create Account'}
-            </Text>
+        </ScrollView>
+        <View style={styles.footer}>
+          <TouchableOpacity style={[styles.saveButton, isSaving && styles.saveButtonDisabled]} onPress={handleSave} disabled={isSaving}>
+            <Text style={styles.saveButtonText}>{isSaving ? 'Saving...' : 'Save Account'}</Text>
           </TouchableOpacity>
         </View>
-      </View>
-    </ScrollView>
+      </SafeAreaView>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  formContent: {
-    padding: 20,
-    gap: 16,
-  },
-  inputGroup: {
-    gap: 8,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#374151',
-  },
-  textInput: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
-    backgroundColor: '#ffffff',
-    color: '#1f2937',
-  },
-  textArea: {
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  typeSelector: {
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  typeButton: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#ffffff',
-    alignItems: 'center',
-  },
-  typeButtonActive: {
-    backgroundColor: '#2563eb',
-  },
-  typeButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#374151',
-  },
-  typeButtonTextActive: {
-    color: '#ffffff',
-  },
-  formActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 20,
-    paddingBottom: 20,
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    backgroundColor: '#f3f4f6',
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#374151',
-  },
-  saveButton: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    backgroundColor: '#2563eb',
-    alignItems: 'center',
-  },
-  saveButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  // BalanceEntriesManager styles
-  managerContainer: {
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-  },
-  managerTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 12,
-  },
-  entryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#f9fafb',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  entryInfo: {
-    flex: 1,
-  },
-  entryDescription: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#1f2937',
-  },
-  entryDate: {
-    fontSize: 12,
-    color: '#6b7280',
-  },
-  creditAmount: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#059669',
-    marginHorizontal: 12,
-  },
-  debitAmount: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#dc2626',
-    marginHorizontal: 12,
-  },
-  removeButton: {
-    padding: 4,
-  },
-  addEntryForm: {
-    marginTop: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    gap: 12,
-  },
-  formSectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  entryTextInput: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 6,
-    padding: 12,
-    fontSize: 14,
-    backgroundColor: '#ffffff',
-  },
-  amountTypeRow: {
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'center',
-  },
-  entryTypeSelector: {
-    flexDirection: 'row',
-    borderRadius: 6,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    flex: 1,
-  },
-  entryTypeButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12,
-  },
-  typeButtonTextBox: {
-    alignItems: 'center',
-  },
-  entryTypeActiveDebit: {
-    backgroundColor: '#dc2626',
-  },
-  entryTypeActiveCredit: {
-    backgroundColor: '#059669',
-  },
-  entryTypeText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  entryTypeTextActive: {
-    color: '#ffffff',
-  },
-  helperText: {
-    fontSize: 10,
-    color: '#6b7280',
-  },
-  addEntryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#2563eb',
-    paddingVertical: 12,
-    borderRadius: 6,
-  },
-  addEntryButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '500',
-  },
+  container: { flex: 1, backgroundColor: '#f8fafc' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
+  headerTitle: { fontSize: 20, fontWeight: '700', color: '#1f2937' },
+  closeButton: { padding: 4 },
+  scrollView: { flex: 1 },
+  form: { padding: 16, gap: 16 },
+  inputGroup: { gap: 8 },
+  label: { fontSize: 14, fontWeight: '500', color: '#374151', flexDirection: 'row', alignItems: 'center' },
+  input: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 8, padding: 12, fontSize: 14, backgroundColor: '#fff' },
+  textArea: { minHeight: 80, textAlignVertical: 'top' },
+  typeSelector: { flexDirection: 'row', borderWidth: 1, borderColor: '#d1d5db', borderRadius: 8, overflow: 'hidden' },
+  typeButton: { flex: 1, padding: 12, alignItems: 'center', backgroundColor: '#fff' },
+  typeButtonActive: { backgroundColor: '#2563eb' },
+  typeButtonText: { fontSize: 14, fontWeight: '600', color: '#374151' },
+  typeButtonTextActive: { color: '#fff' },
+  balanceSection: { marginTop: 16, borderTopWidth: 1, borderTopColor: '#e5e7eb', paddingTop: 16 },
+  sectionTitle: { fontSize: 16, fontWeight: '600', marginBottom: 12 },
+  balanceEntryRow: { padding: 12, backgroundColor: '#f9fafb', borderRadius: 8, marginBottom: 12, borderWidth: 1, borderColor: '#e5e7eb', gap: 12 },
+  balanceInputGroup: { gap: 4 },
+  balanceLabel: { fontSize: 12, color: '#6b7280' },
+  balanceDateButton: { padding: 8 },
+  typeButtonSmall: { flex: 1, padding: 8, alignItems: 'center', backgroundColor: '#fff' },
+  typeButtonTextSmall: { fontSize: 12, fontWeight: '500', color: '#374151' },
+  removeButton: { position: 'absolute', top: 8, right: 8, padding: 4 },
+  addButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 12, borderWidth: 1, borderColor: '#d1d5db', borderStyle: 'dashed', borderRadius: 8 },
+  addButtonText: { fontSize: 14, fontWeight: '500', color: '#2563eb' },
+  footer: { padding: 16, borderTopWidth: 1, borderTopColor: '#e5e7eb' },
+  saveButton: { backgroundColor: '#2563eb', padding: 16, borderRadius: 12, alignItems: 'center' },
+  saveButtonDisabled: { backgroundColor: '#93c5fd' },
+  saveButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });

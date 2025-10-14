@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Modal, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Modal, ScrollView } from 'react-native';
 import { HandCoins, Plus, Trash2, X } from 'lucide-react-native';
 import { Card } from './Card';
 import { NumberInput } from './NumberInput';
 import { AccountAutocomplete } from './AccountAutocomplete';
+import { ConfirmModal } from './ConfirmModal';
 import { PaymentReceived, Account } from '../types/daybook';
+import { useNotification } from '../context/NotificationContext';
+import { formatIndianCurrency } from '../utils/formatters';
 
 interface PaymentsReceivedProps {
   payments: PaymentReceived[];
@@ -15,17 +18,23 @@ interface PaymentsReceivedProps {
 }
 
 export function PaymentsReceived({ payments, accounts, onAddPayment, onDeletePayment, date }: PaymentsReceivedProps) {
+  const { showNotification } = useNotification();
   const [showForm, setShowForm] = useState(false);
   const [accountName, setAccountName] = useState('');
   const [newPayment, setNewPayment] = useState({
     accountId: '',
     amount: 0,
     description: '',
+    receiptNumber: '', // New field
   });
+
+  // State for confirmation modal
+  const [isConfirmModalVisible, setIsConfirmModalVisible] = useState(false);
+  const [paymentToDelete, setPaymentToDelete] = useState<PaymentReceived | null>(null);
 
   const handleAddPayment = async () => {
     if (!newPayment.accountId || newPayment.amount <= 0) {
-      Alert.alert('Invalid Input', 'Please select an account and enter a valid amount.');
+      showNotification('Please select an account and enter a valid amount.', 'error');
       return;
     }
     await onAddPayment({ ...newPayment, date });
@@ -33,18 +42,19 @@ export function PaymentsReceived({ payments, accounts, onAddPayment, onDeletePay
   };
 
   const handleDeletePayment = (payment: PaymentReceived) => {
-    Alert.alert(
-      'Delete Payment',
-      `Are you sure you want to delete the payment of ₹${payment.amount} from ${getAccountNameById(payment.accountId)}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => onDeletePayment(payment.id) },
-      ]
-    );
+    setPaymentToDelete(payment);
+    setIsConfirmModalVisible(true);
+  };
+  
+  const performDelete = async () => {
+    if (!paymentToDelete) return;
+    await onDeletePayment(paymentToDelete.id);
+    setIsConfirmModalVisible(false);
+    setPaymentToDelete(null);
   };
 
   const resetForm = () => {
-    setNewPayment({ accountId: '', amount: 0, description: '' });
+    setNewPayment({ accountId: '', amount: 0, description: '', receiptNumber: '' });
     setAccountName('');
     setShowForm(false);
   };
@@ -56,95 +66,119 @@ export function PaymentsReceived({ payments, accounts, onAddPayment, onDeletePay
   const totalPaymentsReceived = payments.reduce((sum, p) => sum + p.amount, 0);
 
   return (
-    <Card>
-      <View style={styles.header}>
-        <HandCoins size={20} color="#2563eb" />
-        <Text style={styles.title}>Payments Received</Text>
-      </View>
-      <Text style={styles.subtitle}>Log payments received from factories or transporters.</Text>
+    <>
+      <Card>
+        <View style={styles.header}>
+          <HandCoins size={20} color="#2563eb" />
+          <Text style={styles.title}>Payments Received</Text>
+        </View>
+        <Text style={styles.subtitle}>Log payments received from factories or transporters.</Text>
 
-      <TouchableOpacity onPress={() => setShowForm(true)} style={styles.addButton}>
-        <Plus size={16} color="#ffffff" />
-        <Text style={styles.addButtonText}>Add Payment</Text>
-      </TouchableOpacity>
+        <TouchableOpacity onPress={() => setShowForm(true)} style={styles.addButton}>
+          <Plus size={16} color="#ffffff" />
+          <Text style={styles.addButtonText}>Add Payment</Text>
+        </TouchableOpacity>
 
-      <View style={styles.paymentsList}>
-        {payments.length === 0 ? (
-          <Text style={styles.noDataText}>No payments recorded for today.</Text>
-        ) : (
-          payments.map(payment => (
-            <View key={payment.id} style={styles.paymentRow}>
-              <View style={styles.paymentInfo}>
-                <Text style={styles.accountName}>{getAccountNameById(payment.accountId)}</Text>
-                <Text style={styles.paymentDescription}>{payment.description || 'No description'}</Text>
+        <View style={styles.paymentsList}>
+          {payments.length === 0 ? (
+            <Text style={styles.noDataText}>No payments recorded for today.</Text>
+          ) : (
+            payments.map(payment => (
+              <View key={payment.id} style={styles.paymentRow}>
+                <View style={styles.paymentInfo}>
+                  <Text style={styles.accountName}>{getAccountNameById(payment.accountId)}</Text>
+                  {payment.receiptNumber && <Text style={styles.receiptNumber}>Receipt: {payment.receiptNumber}</Text>}
+                  <Text style={styles.paymentDescription}>{payment.description || 'No description'}</Text>
+                </View>
+                <Text style={styles.paymentAmount}>{formatIndianCurrency(payment.amount)}</Text>
+                <TouchableOpacity onPress={() => handleDeletePayment(payment)} style={styles.removeButton}>
+                  <Trash2 size={16} color="#dc2626" />
+                </TouchableOpacity>
               </View>
-              <Text style={styles.paymentAmount}>₹{payment.amount.toFixed(2)}</Text>
-              <TouchableOpacity onPress={() => handleDeletePayment(payment)} style={styles.removeButton}>
-                <Trash2 size={16} color="#dc2626" />
-              </TouchableOpacity>
-            </View>
-          ))
-        )}
-      </View>
+            ))
+          )}
+        </View>
 
-      <View style={styles.summarySection}>
-        <Text style={styles.summaryLabel}>Total Payments Received Today:</Text>
-        <Text style={styles.summaryValue}>₹{totalPaymentsReceived.toFixed(2)}</Text>
-      </View>
+        <View style={styles.summarySection}>
+          <Text style={styles.summaryLabel}>Total Payments Received Today:</Text>
+          <Text style={styles.summaryValue}>{formatIndianCurrency(totalPaymentsReceived)}</Text>
+        </View>
 
-      <Modal animationType="slide" transparent={true} visible={showForm} onRequestClose={resetForm}>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Payment Received</Text>
-              <TouchableOpacity onPress={resetForm} style={styles.closeButton}>
-                <X size={24} color="#6b7280" />
-              </TouchableOpacity>
-            </View>
-            <ScrollView keyboardShouldPersistTaps="handled" style={styles.formScrollView}>
-              <View style={styles.formSection}>
-                <Text style={styles.inputLabel}>Account</Text>
-                <AccountAutocomplete
-                  accounts={accounts}
-                  value={accountName}
-                  onValueChange={setAccountName}
-                  onAccountSelect={account => {
-                    setAccountName(account.name);
-                    setNewPayment({ ...newPayment, accountId: account.id });
-                  }}
-                  placeholder="Search for an account"
-                />
+        <Modal animationType="slide" transparent={true} visible={showForm} onRequestClose={resetForm}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Add Payment Received</Text>
+                <TouchableOpacity onPress={resetForm} style={styles.closeButton}>
+                  <X size={24} color="#6b7280" />
+                </TouchableOpacity>
               </View>
-              <View style={styles.formSection}>
-                <Text style={styles.inputLabel}>Amount (₹)</Text>
-                <NumberInput
-                  value={newPayment.amount}
-                  onChangeValue={amount => setNewPayment({ ...newPayment, amount })}
-                  placeholder="0.00"
-                />
+              <ScrollView keyboardShouldPersistTaps="handled" style={styles.formScrollView}>
+                <View style={styles.formSection}>
+                  <Text style={styles.inputLabel}>Account</Text>
+                  <AccountAutocomplete
+                    accounts={accounts}
+                    value={accountName}
+                    onValueChange={setAccountName}
+                    onAccountSelect={account => {
+                      setAccountName(account.name);
+                      setNewPayment({ ...newPayment, accountId: account.id });
+                    }}
+                    placeholder="Search for an account"
+                  />
+                </View>
+                <View style={styles.formSection}>
+                  <Text style={styles.inputLabel}>Amount (₹)</Text>
+                  <NumberInput
+                    value={newPayment.amount}
+                    onChangeValue={amount => setNewPayment({ ...newPayment, amount })}
+                    placeholder="0.00"
+                  />
+                </View>
+                <View style={styles.formSection}>
+                  <Text style={styles.inputLabel}>Receipt Number (Optional)</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={newPayment.receiptNumber}
+                    onChangeText={receiptNumber => setNewPayment({ ...newPayment, receiptNumber })}
+                    placeholder="e.g., 98765"
+                  />
+                </View>
+                <View style={styles.formSection}>
+                  <Text style={styles.inputLabel}>Description (Optional)</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={newPayment.description}
+                    onChangeText={description => setNewPayment({ ...newPayment, description })}
+                    placeholder="e.g., Payment for invoice #123"
+                  />
+                </View>
+              </ScrollView>
+              <View style={styles.formActions}>
+                <TouchableOpacity onPress={resetForm} style={styles.cancelButton}>
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleAddPayment} style={styles.saveButton}>
+                  <Text style={styles.saveButtonText}>Add Payment</Text>
+                </TouchableOpacity>
               </View>
-              <View style={styles.formSection}>
-                <Text style={styles.inputLabel}>Description (Optional)</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={newPayment.description}
-                  onChangeText={description => setNewPayment({ ...newPayment, description })}
-                  placeholder="e.g., Payment for invoice #123"
-                />
-              </View>
-            </ScrollView>
-            <View style={styles.formActions}>
-              <TouchableOpacity onPress={resetForm} style={styles.cancelButton}>
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleAddPayment} style={styles.saveButton}>
-                <Text style={styles.saveButtonText}>Add Payment</Text>
-              </TouchableOpacity>
             </View>
           </View>
-        </View>
-      </Modal>
-    </Card>
+        </Modal>
+      </Card>
+      <ConfirmModal
+        visible={isConfirmModalVisible}
+        title="Delete Payment"
+        message={`Are you sure you want to delete the payment of ${formatIndianCurrency(paymentToDelete?.amount)} from ${paymentToDelete ? getAccountNameById(paymentToDelete.accountId) : ''}?`}
+        onCancel={() => {
+          setIsConfirmModalVisible(false);
+          setPaymentToDelete(null);
+        }}
+        onConfirm={performDelete}
+        confirmText="Delete"
+        isDestructive={true}
+      />
+    </>
   );
 }
 
@@ -159,6 +193,7 @@ const styles = StyleSheet.create({
     paymentRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f9fafb', padding: 12, borderRadius: 8 },
     paymentInfo: { flex: 1 },
     accountName: { fontSize: 14, fontWeight: '600', color: '#1f2937' },
+    receiptNumber: { fontSize: 12, color: '#2563eb', fontStyle: 'italic' },
     paymentDescription: { fontSize: 12, color: '#6b7280' },
     paymentAmount: { fontSize: 14, fontWeight: '700', color: '#059669', marginHorizontal: 12 },
     removeButton: { padding: 8, borderRadius: 6, backgroundColor: '#fef2f2' },

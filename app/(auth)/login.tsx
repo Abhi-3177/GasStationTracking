@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, Link } from 'expo-router';
+import { Link } from 'expo-router';
 import { Fuel, Mail, Lock, Eye, EyeOff } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 
 export default function LoginScreen() {
-  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -28,9 +27,9 @@ export default function LoginScreen() {
 
       if (error) {
         Alert.alert('Login Failed', error.message);
-      } else {
-        router.replace('/(tabs)');
       }
+      // The redirect is now handled by the AuthLayout.
+      // No need for router.replace() here.
     } catch (e: any) {
       console.error("An unexpected error occurred during login:", e);
       Alert.alert('Login Error', e.message || 'An unexpected error occurred. Please try again.');

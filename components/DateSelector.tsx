@@ -37,7 +37,7 @@ export function DateSelector({ selectedDate, onDateChange, buttonStyle }: DateSe
       >
         <LucideCalendar size={20} color="#2563eb" />
         <Text style={styles.dateText}>
-          {format(selectedDate, 'PPP')}
+          {format(selectedDate, 'dd/MM/yyyy')}
         </Text>
       </TouchableOpacity>
       

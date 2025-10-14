@@ -4,12 +4,14 @@ import { BookOpen, TrendingUp, TrendingDown } from 'lucide-react-native';
 import { Card } from './Card';
 import { DayBookRecord } from '../types/daybook';
 import { calculateTotals } from '../utils/calculations';
+import { formatIndianCurrency } from '../utils/formatters';
 
 interface DayBookSummaryProps {
   dayBookRecord: DayBookRecord | null;
+  previousDayBookRecord?: DayBookRecord | null; // Make previous record optional
 }
 
-export function DayBookSummary({ dayBookRecord }: DayBookSummaryProps) {
+export function DayBookSummary({ dayBookRecord, previousDayBookRecord = null }: DayBookSummaryProps) {
   if (!dayBookRecord) {
     return (
       <Card>
@@ -22,7 +24,7 @@ export function DayBookSummary({ dayBookRecord }: DayBookSummaryProps) {
     );
   }
   
-  const totals = calculateTotals(dayBookRecord);
+  const totals = calculateTotals(dayBookRecord, previousDayBookRecord);
 
   return (
     <Card>
@@ -35,13 +37,13 @@ export function DayBookSummary({ dayBookRecord }: DayBookSummaryProps) {
         <View style={styles.summaryItem}>
           <TrendingUp size={20} color="#059669" />
           <Text style={styles.summaryLabel}>Total Sale</Text>
-          <Text style={styles.summaryValue}>₹{totals.totalSale.toFixed(2)}</Text>
+          <Text style={styles.summaryValue}>{formatIndianCurrency(totals.totalSale)}</Text>
         </View>
         
         <View style={styles.summaryItem}>
           <TrendingDown size={20} color="#dc2626" />
           <Text style={styles.summaryLabel}>Total Expenses</Text>
-          <Text style={styles.summaryValue}>₹{totals.totalExpenses.toFixed(2)}</Text>
+          <Text style={styles.summaryValue}>{formatIndianCurrency(totals.totalExpenses)}</Text>
         </View>
       </View>
     </Card>

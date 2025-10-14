@@ -4,6 +4,7 @@ import { Gauge } from 'lucide-react-native';
 import { Card } from './Card';
 import { NumberInput } from './NumberInput';
 import { MachineReading } from '../types/daybook';
+import { formatLitres } from '../utils/formatters';
 
 interface MachineReadingsProps {
   machines: {
@@ -45,7 +46,7 @@ export function MachineReadings({ machines, onUpdateMachine, isOpeningEditable }
           
           <View style={styles.litresDisplay}>
             <Text style={styles.inputLabel}>Litres</Text>
-            <Text style={styles.litresValue}>{litresSold.toFixed(2)}</Text>
+            <Text style={styles.litresValue}>{formatLitres(litresSold)}</Text>
           </View>
         </View>
       </View>
@@ -74,7 +75,7 @@ export function MachineReadings({ machines, onUpdateMachine, isOpeningEditable }
         {machines.petrol.map(machine => renderMachine(machine, 'petrol'))}
         <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>Total Petrol Litres:</Text>
-          <Text style={styles.totalValue}>{petrolTotal.toFixed(2)} L</Text>
+          <Text style={styles.totalValue}>{formatLitres(petrolTotal)}</Text>
         </View>
       </View>
       
@@ -83,7 +84,7 @@ export function MachineReadings({ machines, onUpdateMachine, isOpeningEditable }
         {machines.diesel.map(machine => renderMachine(machine, 'diesel'))}
         <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>Total Diesel Litres:</Text>
-          <Text style={styles.totalValue}>{dieselTotal.toFixed(2)} L</Text>
+          <Text style={styles.totalValue}>{formatLitres(dieselTotal)}</Text>
         </View>
       </View>
     </Card>

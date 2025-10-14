@@ -1,6 +1,22 @@
 import { supabase } from '../lib/supabase';
-import { DayBookRecord, Account, DailyRecord, PaymentReceived } from '../types/daybook';
-import { format, subDays } from 'date-fns';
+import { DayBookRecord, Account, DailyRecord, PaymentReceived, CreditSale, Sale0332, BalanceEntry, Transaction, SviSale, StockOrder, AgedDebtor } from '../types/daybook';
+import { format, subDays, startOfMonth, endOfMonth } from 'date-fns';
+
+// --- Text Formatting Helpers ---
+const toTitleCase = (str: string | null | undefined): string => {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+};
+
+const toUpperCase = (str: string | null | undefined): string => {
+  if (!str) return '';
+  return str.toUpperCase().trim();
+};
+
 
 // Helper to get current user's ID
 const getUserId = async (): Promise<string> => {
@@ -15,12 +31,115 @@ const getUserId = async (): Promise<string> => {
 
 export async function saveRecord(record: DayBookRecord): Promise<void> {
   const userId = await getUserId();
+
+  // Create a mutable copy to apply formatting
+  const formattedRecord: DayBookRecord = JSON.parse(JSON.stringify(record));
+
+  // --- START: Apply Capitalization ---
+  const formatSale = (sale: CreditSale | Sale0332 | SviSale) => ({
+    ...sale,
+    name: toTitleCase(sale.name),
+    vehicleNumber: toUpperCase(sale.vehicleNumber),
+  });
+
+  formattedRecord.deductions.creditSales = (formattedRecord.deductions.creditSales || []).map(formatSale);
+  formattedRecord.deductions.sales0332 = (formattedRecord.deductions.sales0332 || []).map(formatSale);
+  formattedRecord.deductions.sviSales = (formattedRecord.deductions.sviSales || []).map(formatSale);
+
+
+  formattedRecord.otherSales = (formattedRecord.otherSales || []).map(s => ({ ...s, name: toTitleCase(s.name) }));
+  formattedRecord.cashTransactions = (formattedRecord.cashTransactions || []).map(i => ({ ...i, name: toTitleCase(i.name) }));
+  
+  formattedRecord.expenses.gasCommissions = (formattedRecord.expenses.gasCommissions || []).map(e => ({ ...e, name: toTitleCase(e.name) }));
+  formattedRecord.expenses.additionalExpenses = (formattedRecord.expenses.additionalExpenses || []).map(e => ({ ...e, name: toTitleCase(e.name) }));
+  
+  formattedRecord.payments.cashDeposits = (formattedRecord.payments.cashDeposits || []).map(d => ({ ...d, description: toTitleCase(d.description) }));
+  // --- END: Apply Capitalization ---
+
+  // --- START: Auto-account creation and linking logic ---
+  try {
+    const salesToProcess = [
+      ...(formattedRecord.deductions.creditSales || []),
+      ...(formattedRecord.deductions.sales0332 || []),
+      ...(formattedRecord.deductions.sviSales || []),
+      ...(formattedRecord.cashTransactions || []),
+    ];
+
+    const namesToLink = new Set<string>();
+    salesToProcess.forEach(sale => {
+      if (sale.name && !sale.accountId) {
+        namesToLink.add(sale.name.trim());
+      }
+    });
+
+    if (namesToLink.size > 0) {
+      const { data: existingAccounts, error: fetchError } = await supabase
+        .from('accounts')
+        .select('id, name')
+        .eq('user_id', userId);
+
+      if (fetchError) {
+        console.error("Auto-linking failed: Could not fetch existing accounts.", fetchError);
+      } else {
+        const existingAccountMap = new Map(
+          (existingAccounts || []).map(acc => [acc.name.trim().toLowerCase(), acc.id])
+        );
+
+        const newAccountNames: string[] = [];
+        for (const name of namesToLink) {
+          if (!existingAccountMap.has(name.toLowerCase())) {
+            newAccountNames.push(name);
+          }
+        }
+        
+        if (newAccountNames.length > 0) {
+          const accountsToInsert = newAccountNames.map(name => ({
+            name, // Name is already title-cased
+            type: 'factory' as 'factory' | 'transporter',
+            user_id: userId,
+          }));
+
+          const { data: createdAccounts, error: createError } = await supabase
+            .from('accounts')
+            .insert(accountsToInsert)
+            .select('id, name');
+
+          if (createError) {
+            console.error("Failed to auto-create new accounts:", createError);
+          } else if (createdAccounts) {
+            createdAccounts.forEach(acc => {
+              existingAccountMap.set(acc.name.trim().toLowerCase(), acc.id);
+            });
+          }
+        }
+
+        const linkAccountId = (sale: any): any => {
+          if (sale.name && !sale.accountId) {
+            const accountId = existingAccountMap.get(sale.name.trim().toLowerCase());
+            if (accountId) {
+              return { ...sale, accountId };
+            }
+          }
+          return sale;
+        };
+
+        formattedRecord.deductions.creditSales = (formattedRecord.deductions.creditSales || []).map(linkAccountId);
+        formattedRecord.deductions.sales0332 = (formattedRecord.deductions.sales0332 || []).map(linkAccountId);
+        formattedRecord.deductions.sviSales = (formattedRecord.deductions.sviSales || []).map(linkAccountId);
+        formattedRecord.cashTransactions = (formattedRecord.cashTransactions || []).map(linkAccountId);
+      }
+    }
+  } catch (e) {
+    console.error("An unexpected error occurred during auto-account creation logic:", e);
+  }
+  // --- END: Auto-account creation and linking logic ---
+
   const { error } = await supabase
     .from('day_book_records')
     .upsert({
-      date: record.date,
+      date: formattedRecord.date,
       user_id: userId,
-      record: record as any,
+      record: formattedRecord as any,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'date, user_id' });
 
@@ -65,13 +184,99 @@ export async function getAllRecords(): Promise<DayBookRecord[]> {
   return data.map(item => item.record as DayBookRecord);
 }
 
+export async function getRecordsForMonth(year: number, month: number): Promise<{ dayBook: DayBookRecord; dailyRecord: DailyRecord | null; }[]> {
+    const userId = await getUserId();
+    const startDate = format(startOfMonth(new Date(year, month)), 'yyyy-MM-dd');
+    const endDate = format(endOfMonth(new Date(year, month)), 'yyyy-MM-dd');
+
+    const { data: dayBooks, error: dayBookError } = await supabase
+        .from('day_book_records')
+        .select('record')
+        .eq('user_id', userId)
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .order('date', { ascending: true });
+
+    if (dayBookError) {
+        console.error('Error fetching records for month:', dayBookError);
+        throw dayBookError;
+    }
+    if (!dayBooks) return [];
+
+    const { data: dailyRecords, error: dailyRecordError } = await supabase
+        .from('daily_records')
+        .select('*')
+        .eq('user_id', userId)
+        .gte('date', startDate)
+        .lte('date', endDate);
+
+    if (dailyRecordError) {
+        console.error('Error fetching daily records for month:', dailyRecordError);
+        // We can continue without daily records if they fail
+    }
+
+    const { data: allPayments, error: paymentsError } = await supabase
+        .from('payments_received')
+        .select('*')
+        .eq('user_id', userId)
+        .gte('date', startDate)
+        .lte('date', endDate);
+    
+    if (paymentsError) {
+        console.error('Error fetching payments for month:', paymentsError);
+    }
+
+    const dailyRecordMap = new Map<string, DailyRecord>();
+    (dailyRecords || []).forEach(dr => {
+        dailyRecordMap.set(dr.date, {
+            ...dr,
+            bankReconciliation: (dr.bank_reconciliation as any) || [],
+            paymentsReceived: allPayments?.filter(p => p.date === dr.date) || [],
+        });
+    });
+
+    return dayBooks.map(item => {
+        const dayBook = item.record as DayBookRecord;
+        return {
+            dayBook,
+            dailyRecord: dailyRecordMap.get(dayBook.date) || null,
+        };
+    });
+}
+
+export async function getDayBookRecordsForDateRange(startDate: string, endDate: string): Promise<DayBookRecord[]> {
+    const userId = await getUserId();
+    const { data, error } = await supabase
+        .from('day_book_records')
+        .select('record')
+        .eq('user_id', userId)
+        .gte('date', startDate)
+        .lte('date', endDate);
+    
+    if (error) {
+        console.error('Error fetching day book records for date range:', error);
+        throw error;
+    }
+    return (data || []).map(item => item.record as DayBookRecord);
+}
+
 export async function deleteRecordsForDate(date: string): Promise<void> {
-  const userId = await getUserId();
-  
-  // Delete in order to respect dependencies if any
-  await supabase.from('payments_received').delete().eq('user_id', userId).eq('date', date);
-  await supabase.from('daily_records').delete().eq('user_id', userId).eq('date', date);
-  await supabase.from('day_book_records').delete().eq('user_id', userId).eq('date', date);
+  const { error } = await supabase.rpc('delete_records_for_date', {
+    record_date: date,
+  });
+
+  if (error) {
+    console.error('Error calling delete_records_for_date RPC:', error);
+    throw new Error(`Database deletion failed: ${error.message}. Please check database permissions or function definition.`);
+  }
+}
+
+export async function deleteAllUserData(): Promise<void> {
+    const { error } = await supabase.rpc('delete_all_user_data');
+    if (error) {
+        console.error('Error calling delete_all_user_data RPC:', error);
+        throw new Error(`Failed to delete all user data: ${error.message}`);
+    }
 }
 
 // --- Account Functions ---
@@ -80,10 +285,22 @@ export async function saveAccount(account: Account): Promise<void> {
   const userId = await getUserId();
   const { id, balanceEntries, createdAt, ...accountData } = account;
 
-  const isNewAccount = !id.includes('-');
+  // Apply formatting
+  const formattedAccountData = {
+    ...accountData,
+    name: toTitleCase(accountData.name),
+    address: toTitleCase(accountData.address),
+  };
+
+  const formattedBalanceEntries = (balanceEntries || []).map(entry => ({
+    ...entry,
+    description: toTitleCase(entry.description),
+  }));
+
+  const isNewAccount = !id || !id.includes('-');
 
   const accountToUpsert = {
-    ...accountData,
+    ...formattedAccountData,
     user_id: userId,
     ...(!isNewAccount && { id: id }),
   };
@@ -100,8 +317,8 @@ export async function saveAccount(account: Account): Promise<void> {
 
   await supabase.from('balance_entries').delete().eq('account_id', savedAccountId);
 
-  if (balanceEntries && balanceEntries.length > 0) {
-    const entriesToInsert = balanceEntries.map(({ id: entryId, ...entry }) => ({
+  if (formattedBalanceEntries.length > 0) {
+    const entriesToInsert = formattedBalanceEntries.map(({ id: entryId, ...entry }) => ({
       ...entry,
       account_id: savedAccountId,
       user_id: userId,
@@ -135,21 +352,36 @@ export async function getAllAccounts(): Promise<Account[]> {
   const userId = await getUserId();
   const { data, error } = await supabase
     .from('accounts')
-    .select('*, balance_entries(*)')
+    .select('*')
     .eq('user_id', userId)
     .order('name', { ascending: true });
 
-  if (error) throw error;
+  if (error) {
+    console.error("Error loading accounts from DB:", error);
+    throw error;
+  }
 
-  return data.map(account => ({
-    ...account,
-    createdAt: account.created_at,
-    balanceEntries: (account.balance_entries as any[] || []),
-  })) as Account[];
+  if (!data) {
+    return [];
+  }
+
+  return data
+    .map(account => {
+      if (!account || !account.id) {
+        return null;
+      }
+      return {
+        ...account,
+        createdAt: account.created_at,
+        balanceEntries: [],
+      } as Account;
+    })
+    .filter((account): account is Account => account !== null);
 }
 
 export async function deleteAccount(accountId: string): Promise<void> {
   const userId = await getUserId();
+  await supabase.from('balance_entries').delete().eq('account_id', accountId);
   const { error } = await supabase
     .from('accounts')
     .delete()
@@ -159,127 +391,441 @@ export async function deleteAccount(accountId: string): Promise<void> {
   if (error) throw error;
 }
 
-// --- Daily Record and Payments Received Functions ---
+export async function getTransactionsForAccount(accountId: string): Promise<Transaction[]> {
+    const userId = await getUserId();
+    const allTransactions: Transaction[] = [];
 
-export async function getDailyRecord(date: string): Promise<DailyRecord | null> {
-  const userId = await getUserId();
-  const { data, error } = await supabase
-    .from('daily_records')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('date', date)
-    .single();
+    // 1. Fetch Balance Entries
+    const { data: balanceEntries, error: balanceError } = await supabase
+        .from('balance_entries')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('account_id', accountId);
+    if (balanceError) throw balanceError;
+    if (balanceEntries) {
+        allTransactions.push(...balanceEntries.map(be => ({ ...be, id: `be:${be.id}` })));
+    }
 
-  if (error && error.code !== 'PGRST116') throw error;
-  if (!data) return null;
-  
-  const { data: payments, error: paymentsError } = await supabase
-    .from('payments_received')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('date', date);
+    // 2. Fetch Payments Received
+    const { data: paymentsReceived, error: paymentsError } = await supabase
+        .from('payments_received')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('account_id', accountId);
+    if (paymentsError) throw paymentsError;
+    if (paymentsReceived) {
+        allTransactions.push(...paymentsReceived.map(pr => ({
+            id: `pr:${pr.id}`,
+            date: pr.date,
+            description: `Payment Received ${pr.receipt_number ? `(Receipt: ${pr.receipt_number})` : ''}: ${pr.description || 'N/A'}`,
+            type: 'credit',
+            amount: pr.amount,
+        })));
+    }
+
+    // 3. Fetch Day Book Records
+    const { data: dayBookRecords, error: dayBookError } = await supabase
+        .from('day_book_records')
+        .select('date, record')
+        .eq('user_id', userId);
+    if (dayBookError) throw dayBookError;
+    if (dayBookRecords) {
+        dayBookRecords.forEach(dbr => {
+            const record = dbr.record as DayBookRecord;
+            if (!record) return;
+
+            const processSales = (sales: (CreditSale | Sale0332 | SviSale)[], type: string, prefix: string) => {
+                (sales || []).forEach(sale => {
+                    if (sale.accountId === accountId) {
+                        allTransactions.push({
+                            id: `${prefix}:${dbr.date}:${sale.id}`,
+                            date: dbr.date,
+                            description: `${type} ${sale.receiptNumber ? `(Receipt: ${sale.receiptNumber})` : ''}: ${sale.vehicleNumber || sale.name}`,
+                            type: 'debit',
+                            amount: sale.amount,
+                        });
+                    }
+                });
+            };
+            
+            processSales(record.deductions?.creditSales, 'Credit Sale', 'cs');
+            processSales(record.deductions?.sales0332, '0332 Sale', 's0');
+            processSales(record.deductions?.sviSales, 'SVI Sale', 'sv');
+            
+            // Cash Transactions
+            (record.cashTransactions || []).forEach(trans => {
+                if (trans.accountId === accountId) {
+                    const prefix = `ct_${trans.type}`;
+                    allTransactions.push({
+                        id: `${prefix}:${dbr.date}:${trans.id}`,
+                        date: dbr.date,
+                        description: `Cash ${trans.type === 'in' ? 'Received' : 'Given'}`,
+                        type: trans.type === 'in' ? 'credit' : 'debit',
+                        amount: trans.amount,
+                    });
+                }
+            });
+        });
+    }
+
+    // Sort all transactions by date
+    allTransactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     
-  if (paymentsError) throw paymentsError;
+    return allTransactions;
+}
 
-  return {
-    date: data.date,
-    user_id: data.user_id,
-    bankReconciliation: (data.bank_reconciliation as any) || [],
-    paymentsReceived: payments || [],
-  };
+export async function getFilteredAccountTransactions(accountId: string, startDate: string, endDate: string): Promise<Transaction[]> {
+    const userId = await getUserId();
+    const allTransactions: Transaction[] = [];
+
+    // 1. Fetch Balance Entries
+    const { data: balanceEntries, error: balanceError } = await supabase
+        .from('balance_entries')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('account_id', accountId)
+        .gte('date', startDate)
+        .lte('date', endDate);
+    if (balanceError) throw balanceError;
+    if (balanceEntries) {
+        allTransactions.push(...balanceEntries.map(be => ({ ...be, id: `be:${be.id}` })));
+    }
+
+    // 2. Fetch Payments Received
+    const { data: paymentsReceived, error: paymentsError } = await supabase
+        .from('payments_received')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('account_id', accountId)
+        .gte('date', startDate)
+        .lte('date', endDate);
+    if (paymentsError) throw paymentsError;
+    if (paymentsReceived) {
+        allTransactions.push(...paymentsReceived.map(pr => ({
+            id: `pr:${pr.id}`,
+            date: pr.date,
+            description: `Payment Received ${pr.receipt_number ? `(Receipt: ${pr.receipt_number})` : ''}: ${pr.description || 'N/A'}`,
+            type: 'credit',
+            amount: pr.amount,
+        })));
+    }
+
+    // 3. Fetch Day Book Records
+    const { data: dayBookRecords, error: dayBookError } = await supabase
+        .from('day_book_records')
+        .select('date, record')
+        .eq('user_id', userId)
+        .gte('date', startDate)
+        .lte('date', endDate);
+    if (dayBookError) throw dayBookError;
+    if (dayBookRecords) {
+        dayBookRecords.forEach(dbr => {
+            const record = dbr.record as DayBookRecord;
+            if (!record) return;
+
+            const processSales = (sales: (CreditSale | Sale0332 | SviSale)[], type: string, prefix: string) => {
+                (sales || []).forEach(sale => {
+                    if (sale.accountId === accountId) {
+                        allTransactions.push({
+                            id: `${prefix}:${dbr.date}:${sale.id}`,
+                            date: dbr.date,
+                            description: `${type} ${sale.receiptNumber ? `(Receipt: ${sale.receiptNumber})` : ''}: ${sale.vehicleNumber || sale.name}`,
+                            type: 'debit',
+                            amount: sale.amount,
+                        });
+                    }
+                });
+            };
+            
+            processSales(record.deductions?.creditSales, 'Credit Sale', 'cs');
+            processSales(record.deductions?.sales0332, '0332 Sale', 's0');
+            processSales(record.deductions?.sviSales, 'SVI Sale', 'sv');
+            
+            (record.cashTransactions || []).forEach(trans => {
+                if (trans.accountId === accountId) {
+                    const prefix = `ct_${trans.type}`;
+                    allTransactions.push({
+                        id: `${prefix}:${dbr.date}:${trans.id}`,
+                        date: dbr.date,
+                        description: `Cash ${trans.type === 'in' ? 'Received' : 'Given'}`,
+                        type: trans.type === 'in' ? 'credit' : 'debit',
+                        amount: trans.amount,
+                    });
+                }
+            });
+        });
+    }
+
+    allTransactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+    return allTransactions;
+}
+
+export async function deleteTransaction(transactionId: string): Promise<void> {
+  const { error } = await supabase.rpc('delete_transaction', {
+    p_transaction_id: transactionId,
+  });
+  if (error) {
+    console.error('Error calling delete_transaction RPC:', error);
+    throw new Error(`Database deletion failed: ${error.message}`);
+  }
+}
+
+export async function getAccountsForDisplay(): Promise<Account[]> {
+    const userId = await getUserId();
+    const { data: accounts, error } = await supabase
+        .from('accounts')
+        .select('*')
+        .eq('user_id', userId)
+        .order('name', { ascending: true });
+
+    if (error) {
+        console.error("Error loading accounts from DB:", error);
+        throw error;
+    }
+    if (!accounts) return [];
+
+    const accountsWithDetails = await Promise.all(
+        accounts.map(async (account) => {
+            const [transactions, lastPayment] = await Promise.all([
+                getTransactionsForAccount(account.id),
+                supabase
+                    .from('payments_received')
+                    .select('date')
+                    .eq('account_id', account.id)
+                    .order('date', { ascending: false })
+                    .limit(1)
+                    .single()
+            ]);
+
+            const balance = transactions.reduce((bal, tx) => {
+                return bal + (tx.type === 'credit' ? tx.amount : -tx.amount);
+            }, 0);
+
+            return { 
+                ...account, 
+                balanceEntries: [],
+                currentBalance: balance,
+                lastPaymentDate: lastPayment.data?.date || null,
+            } as Account;
+        })
+    );
+
+    return accountsWithDetails;
+}
+
+// --- Stock Order Functions ---
+export async function addStockOrder(order: { date: string; fuel_type: 'petrol' | 'diesel'; litres: number }): Promise<void> {
+    const userId = await getUserId();
+    const { error } = await supabase.from('stock_orders').insert({ ...order, user_id: userId });
+    if (error) throw error;
+}
+
+export async function getStockOrdersForDateRange(startDate: string, endDate: string): Promise<StockOrder[]> {
+    const userId = await getUserId();
+    const { data, error } = await supabase
+        .from('stock_orders')
+        .select('*')
+        .eq('user_id', userId)
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .order('date', { ascending: true });
+    if (error) throw error;
+    return data || [];
+}
+
+export async function getStockOrdersForMonth(year: number, month: number): Promise<StockOrder[]> {
+    const startDate = format(startOfMonth(new Date(year, month)), 'yyyy-MM-dd');
+    const endDate = format(endOfMonth(new Date(year, month)), 'yyyy-MM-dd');
+    return getStockOrdersForDateRange(startDate, endDate);
+}
+
+export async function deleteStockOrder(orderId: string): Promise<void> {
+    const { error } = await supabase.from('stock_orders').delete().eq('id', orderId);
+    if (error) throw error;
+}
+
+
+// --- Analytics Functions ---
+export async function getMonthlyFuelSales() {
+  const { data, error } = await supabase.rpc('get_monthly_fuel_sales');
+  if (error) throw error;
+  return data;
+}
+
+export async function getAccountSalesFluctuation(currentMonthStart: string, percentageThreshold: number) {
+  const { data, error } = await supabase.rpc('get_account_sales_fluctuation', {
+    current_month_start: currentMonthStart,
+    percentage_threshold: percentageThreshold,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function getAgedDebtorsReport(): Promise<AgedDebtor[]> {
+    const { data, error } = await supabase.rpc('get_aged_debtors_report');
+    if (error) {
+        console.error('Error fetching aged debtors report:', error);
+        throw error;
+    }
+    return data || [];
+}
+
+// --- Daily Record Functions ---
+export async function getDailyRecord(date: string): Promise<DailyRecord | null> {
+    const userId = await getUserId();
+    const { data, error } = await supabase
+      .from('daily_records')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('date', date)
+      .single();
+  
+    if (error && error.code !== 'PGRST116') {
+      console.error('Error fetching Daily Record:', error);
+      throw error;
+    }
+    if (!data) return null;
+
+    const { data: payments, error: paymentsError } = await supabase
+        .from('payments_received')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('date', date);
+
+    if (paymentsError) {
+        console.error(`Error fetching payments for ${date}:`, paymentsError);
+    }
+
+    return {
+        ...data,
+        bankReconciliation: (data.bank_reconciliation as any) || [],
+        paymentsReceived: payments || [],
+    };
 }
 
 export async function getAllDailyRecords(): Promise<DailyRecord[]> {
-  const userId = await getUserId();
-  const { data, error } = await supabase
-    .from('daily_records')
-    .select('*')
-    .eq('user_id', userId);
+    const userId = await getUserId();
+    const { data, error } = await supabase
+        .from('daily_records')
+        .select('*')
+        .eq('user_id', userId);
 
-  if (error) throw error;
-
-  const { data: allPayments, error: paymentsError } = await supabase
-    .from('payments_received')
-    .select('*')
-    .eq('user_id', userId);
-
-  if (paymentsError) throw paymentsError;
-
-  return data.map(record => ({
-    date: record.date,
-    user_id: record.user_id,
-    bankReconciliation: (record.bank_reconciliation as any) || [],
-    paymentsReceived: allPayments?.filter(p => p.date === record.date) || [],
-  }));
+    if (error) {
+        console.error('Error fetching all Daily Records:', error);
+        throw error;
+    }
+    return (data || []).map(dr => ({
+        ...dr,
+        bankReconciliation: (dr.bank_reconciliation as any) || [],
+        paymentsReceived: [], // This is simplified; full fetch is complex here
+    }));
 }
 
 export async function saveDailyRecord(record: DailyRecord): Promise<void> {
-  const userId = await getUserId();
-  const { date, bankReconciliation } = record;
+    const userId = await getUserId();
+    const { paymentsReceived, ...recordToSave } = record; // Exclude paymentsReceived
+    
+    const { error } = await supabase
+        .from('daily_records')
+        .upsert({
+            date: recordToSave.date,
+            user_id: userId,
+            bank_reconciliation: recordToSave.bankReconciliation as any,
+            updated_at: new Date().toISOString(),
+        }, { onConflict: 'date, user_id' });
 
-  const { error: dailyRecordError } = await supabase
-    .from('daily_records')
-    .upsert({
-      date,
-      user_id: userId,
-      bank_reconciliation: bankReconciliation as any,
-    }, { onConflict: 'date, user_id' });
-
-  if (dailyRecordError) throw dailyRecordError;
+    if (error) {
+        console.error('Error saving Daily Record:', error);
+        throw error;
+    }
 }
 
-export async function addPaymentReceived(payment: Omit<PaymentReceived, 'id' | 'user_id' | 'created_at'>): Promise<PaymentReceived> {
-  const userId = await getUserId();
-  const { data, error } = await supabase
-    .from('payments_received')
-    .insert({ ...payment, user_id: userId })
-    .select()
-    .single();
-
-  if (error || !data) throw error || new Error('Failed to add payment.');
-  return data as PaymentReceived;
+export async function addPaymentReceived(payment: Omit<PaymentReceived, 'id' | 'user_id' | 'created_at'>): Promise<void> {
+    const userId = await getUserId();
+    // Explicitly map camelCase to snake_case to prevent errors.
+    const { error } = await supabase.from('payments_received').insert({
+        date: payment.date,
+        user_id: userId,
+        account_id: payment.accountId,
+        amount: payment.amount,
+        description: payment.description,
+        receipt_number: payment.receiptNumber,
+    });
+    if (error) {
+      console.error('Error adding payment received:', error);
+      throw error;
+    }
 }
 
 export async function deletePaymentReceived(paymentId: string): Promise<void> {
-  const userId = await getUserId();
-  const { error } = await supabase
-    .from('payments_received')
-    .delete()
-    .eq('id', paymentId)
-    .eq('user_id', userId);
-
-  if (error) throw error;
+    const { error } = await supabase.from('payments_received').delete().eq('id', paymentId);
+    if (error) throw error;
 }
 
-export async function getPaymentsForAccount(accountId: string): Promise<PaymentReceived[]> {
+export async function addCreditSaleToDayBook(sale: Omit<CreditSale, 'id' | 'lastEdited'>, date: string): Promise<void> {
+    const record = await getRecord(date);
+    const newSale: CreditSale = {
+        ...sale,
+        id: Date.now().toString(),
+        lastEdited: 'amount',
+    };
+    if (record) {
+        const updatedRecord = { ...record };
+        updatedRecord.deductions.creditSales = [...(updatedRecord.deductions.creditSales || []), newSale];
+        await saveRecord(updatedRecord);
+    } else {
+        const userId = await getUserId();
+        const prevRecord = await getPreviousRecord(date);
+        const newRecord = createNewRecord(date, prevRecord);
+        newRecord.deductions.creditSales = [newSale];
+        await saveRecord(newRecord);
+    }
+}
+
+// --- System Account Helper ---
+export async function getOrCreateSystemAccount(name: string): Promise<Account> {
   const userId = await getUserId();
-  const { data, error } = await supabase
-    .from('payments_received')
+  const titleCaseName = toTitleCase(name);
+
+  const { data: existingAccount, error: fetchError } = await supabase
+    .from('accounts')
     .select('*')
     .eq('user_id', userId)
-    .eq('account_id', accountId);
-    
-  if (error) throw error;
-  return data as PaymentReceived[];
-}
+    .eq('name', titleCaseName)
+    .single();
 
-// --- Danger Zone Functions ---
+  if (fetchError && fetchError.code !== 'PGRST116') {
+    console.error(`Error fetching system account "${titleCaseName}":`, fetchError);
+    throw fetchError;
+  }
 
-export async function deleteAllUserData(): Promise<void> {
-  const userId = await getUserId();
+  if (existingAccount) {
+    return {
+        ...existingAccount,
+        createdAt: existingAccount.created_at,
+        balanceEntries: [],
+    } as Account;
+  }
 
-  const { error: paymentsError } = await supabase.from('payments_received').delete().eq('user_id', userId);
-  if (paymentsError) throw paymentsError;
-
-  const { error: balanceEntriesError } = await supabase.from('balance_entries').delete().eq('user_id', userId);
-  if (balanceEntriesError) throw balanceEntriesError;
-
-  const { error: dailyRecordsError } = await supabase.from('daily_records').delete().eq('user_id', userId);
-  if (dailyRecordsError) throw dailyRecordsError;
-
-  const { error: dayBookError } = await supabase.from('day_book_records').delete().eq('user_id', userId);
-  if (dayBookError) throw dayBookError;
-
-  const { error: accountsError } = await supabase.from('accounts').delete().eq('user_id', userId);
-  if (accountsError) throw accountsError;
+  const { data: newAccount, error: createError } = await supabase
+    .from('accounts')
+    .insert({
+      name: titleCaseName,
+      type: 'factory', // Default type
+      user_id: userId,
+    })
+    .select()
+    .single();
+  
+  if (createError || !newAccount) {
+    console.error(`Error creating system account "${titleCaseName}":`, createError);
+    throw createError || new Error('Failed to create system account.');
+  }
+  
+  return {
+    ...newAccount,
+    createdAt: newAccount.created_at,
+    balanceEntries: [],
+  } as Account;
 }

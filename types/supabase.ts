@@ -1,4 +1,4 @@
-import { DayBookRecord } from "./daybook"
+import { DayBookRecord, StockOrder } from "./daybook"
 
 export type Json =
   | string
@@ -169,6 +169,7 @@ export type Database = {
           account_id: string
           amount: number
           description: string | null
+          receipt_number: string | null
           created_at: string
         }
         Insert: {
@@ -178,6 +179,7 @@ export type Database = {
           account_id: string
           amount: number
           description?: string | null
+          receipt_number?: string | null
           created_at?: string
         }
         Update: {
@@ -187,6 +189,7 @@ export type Database = {
           account_id?: string
           amount?: number
           description?: string | null
+          receipt_number?: string | null
           created_at?: string
         }
         Relationships: [
@@ -241,12 +244,70 @@ export type Database = {
           },
         ]
       }
+      stock_orders: {
+        Row: StockOrder
+        Insert: Omit<StockOrder, 'id' | 'created_at'>
+        Update: Partial<Omit<StockOrder, 'id' | 'created_at'>>
+        Relationships: [
+          {
+            foreignKeyName: "stock_orders_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      delete_all_user_data: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
+      delete_records_for_date: {
+        Args: {
+          record_date: string
+        }
+        Returns: undefined
+      }
+      delete_transaction: {
+        Args: {
+          p_transaction_id: string
+        }
+        Returns: undefined
+      }
+      get_monthly_fuel_sales: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          month_start: string
+          total_petrol_litres: number
+          total_diesel_litres: number
+        }[]
+      }
+      get_account_sales_fluctuation: {
+        Args: {
+          current_month_start: string
+          percentage_threshold: number
+        }
+        Returns: {
+          account_id: string
+          account_name: string
+          account_type: string
+          previous_month_litres: number
+          current_month_litres: number
+          percentage_change: number
+        }[]
+      }
+      get_aged_outstanding_credit: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          month_start: string
+          total_outstanding: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
