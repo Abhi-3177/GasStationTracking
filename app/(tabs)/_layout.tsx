@@ -1,8 +1,8 @@
+import React, { useEffect } from 'react';
 import { Tabs, useRouter } from 'expo-router';
 import { BookOpen, History, ClipboardList, Settings, Users, BarChart2, PieChart } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { Header } from '../../components/Header';
-import { useEffect } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 
 export default function TabLayout() {
@@ -14,7 +14,7 @@ export default function TabLayout() {
     if (!session) {
       router.replace('/(auth)/login');
     }
-  }, [session, isLoading]);
+  }, [session, isLoading, router]);
 
   if (isLoading || !session) {
     return (

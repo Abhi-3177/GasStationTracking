@@ -5,7 +5,6 @@ import { Settings as SettingsIcon, AlertTriangle } from 'lucide-react-native';
 
 import { Card } from '../../components/Card';
 import { SettlementFileUpload } from '../../components/SettlementFileUpload';
-import { BulkLedgerUpload } from '../../components/BulkLedgerUpload';
 import { StockOrderUpload } from '../../components/StockOrderUpload';
 import { TransactionFileUpload } from '../../components/TransactionFileUpload';
 import { ResetData } from '../../components/ResetData';
@@ -26,8 +25,6 @@ export default function SettingsScreen() {
             <SettlementFileUpload />
 
             <TransactionFileUpload />
-
-            <BulkLedgerUpload />
 
             <StockOrderUpload />
 

@@ -8,13 +8,11 @@ export default function AuthLayout() {
   const router = useRouter();
 
   useEffect(() => {
-    // If the user is signed in and we are not still loading, redirect them away.
     if (!isLoading && session) {
       router.replace('/(tabs)');
     }
-  }, [session, isLoading]);
+  }, [session, isLoading, router]);
 
-  // While loading, show a spinner to prevent flashing the login screen.
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -23,15 +21,14 @@ export default function AuthLayout() {
     );
   }
 
-  // Only render the auth stack if there is no session.
   return <Stack screenOptions={{ headerShown: false }} />;
 }
 
 const styles = StyleSheet.create({
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#f8fafc',
-    }
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+  }
 });

@@ -21,15 +21,13 @@ export default function LoginScreen() {
     const trimmedEmail = email.trim();
     try {
       const { error } = await supabase.auth.signInWithPassword({
-        email: trimmedEmail, // Use the trimmed email
+        email: trimmedEmail,
         password,
       });
 
       if (error) {
         Alert.alert('Login Failed', error.message);
       }
-      // The redirect is now handled by the AuthLayout.
-      // No need for router.replace() here.
     } catch (e: any) {
       console.error("An unexpected error occurred during login:", e);
       Alert.alert('Login Error', e.message || 'An unexpected error occurred. Please try again.');

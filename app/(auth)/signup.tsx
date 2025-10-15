@@ -5,53 +5,46 @@ import { Link, useRouter } from 'expo-router';
 import { Fuel, Mail, Lock, Eye, EyeOff } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 
-export default function SignUpScreen() {
-  const router = useRouter();
+export default function SignupScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const router = useRouter();
 
-  const handleSignUp = async () => {
-    if (!email.trim() || !password) {
-      Alert.alert('Missing Information', 'Please fill out all fields.');
+  const handleSignup = async () => {
+    if (!email.trim() || !password || !confirmPassword) {
+      Alert.alert('Missing Information', 'Please fill in all fields.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      Alert.alert('Password Mismatch', 'Passwords do not match.');
       return;
     }
 
     setIsLoading(true);
     const trimmedEmail = email.trim();
-    console.log('Attempting to sign up with email:', trimmedEmail);
-
     try {
       const { data, error } = await supabase.auth.signUp({
-        email: trimmedEmail, // Use the trimmed email
+        email: trimmedEmail,
         password,
       });
 
-      console.log('Supabase signUp response:', { data, error });
-
       if (error) {
-        console.error('Sign up failed with Supabase error:', error);
-        if (error.message.includes("User already registered")) {
-            Alert.alert('Sign Up Failed', 'An account with this email address already exists. Please log in instead.');
-        } else {
-            Alert.alert('Sign Up Failed', `[Code: ${error.code || 'Unknown'}] ${error.message}`);
-        }
-      } else {
-        Alert.alert(
-          'Sign Up Initiated',
-          'Your account has been created. If email confirmation is required, please check your inbox to complete the process.'
-        );
+        Alert.alert('Signup Failed', error.message);
+      } else if (data.session) {
+        // Already logged in
+        router.replace('/(tabs)');
+      } else if (data.user) {
+        Alert.alert('Signup Successful', 'Please check your email to confirm your account.');
         router.replace('/(auth)/login');
       }
     } catch (e: any) {
-      console.error('An unexpected exception occurred during sign up:', e);
-      Alert.alert(
-        'Unexpected Error',
-        e.message || 'An unknown error occurred. Please check the console for more details.'
-      );
+      console.error("An unexpected error occurred during signup:", e);
+      Alert.alert('Signup Error', e.message || 'An unexpected error occurred. Please try again.');
     } finally {
-      console.log('Sign up process finished.');
       setIsLoading(false);
     }
   };
@@ -61,8 +54,8 @@ export default function SignUpScreen() {
       <View style={styles.content}>
         <View style={styles.header}>
           <Fuel size={48} color="#2563eb" />
-          <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Join us to start tracking your sales.</Text>
+          <Text style={styles.title}>Create an Account</Text>
+          <Text style={styles.subtitle}>Start managing your gas station efficiently.</Text>
         </View>
 
         <View style={styles.form}>
@@ -92,15 +85,29 @@ export default function SignUpScreen() {
             </TouchableOpacity>
           </View>
 
+          <View style={styles.inputContainer}>
+            <Lock size={20} color="#9ca3af" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Confirm Password"
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              secureTextEntry={!showConfirmPassword}
+            />
+            <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={styles.eyeIcon}>
+              {showConfirmPassword ? <EyeOff size={20} color="#9ca3af" /> : <Eye size={20} color="#9ca3af" />}
+            </TouchableOpacity>
+          </View>
+
           <TouchableOpacity
             style={[styles.button, isLoading && styles.buttonDisabled]}
-            onPress={handleSignUp}
+            onPress={handleSignup}
             disabled={isLoading}
           >
-            <Text style={styles.buttonText}>{isLoading ? 'Creating Account...' : 'Sign Up'}</Text>
+            <Text style={styles.buttonText}>{isLoading ? 'Signing Up...' : 'Sign Up'}</Text>
           </TouchableOpacity>
         </View>
-
+        
         <View style={styles.footer}>
           <Text style={styles.footerText}>Already have an account? </Text>
           <Link href="/(auth)/login" asChild>

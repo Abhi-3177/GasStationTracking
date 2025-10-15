@@ -9,15 +9,15 @@ import { DateSelector } from '../../components/DateSelector';
 import { AutoCarryForwardCard } from '../../components/AutoCarryForwardCard';
 import { MachineReadings } from '../../components/MachineReadings';
 import { SalesSection } from '../../components/SalesSection';
+import { DeductionsSection } from '../../components/DeductionsSection';
 import { OtherSalesSection } from '../../components/OtherSalesSection';
 import { CashTransactionsSection } from '../../components/CashTransactionsSection';
-import { DeductionsSection } from '../../components/DeductionsSection';
 import { ExpensesSection } from '../../components/ExpensesSection';
 import { PaymentSettlement } from '../../components/PaymentSettlement';
 import { SummaryCard } from '../../components/SummaryCard';
 import { SaveButton } from '../../components/SaveButton';
 
-import { DayBookRecord, MachineReading, Account, OtherSale, CashTransaction } from '../../types/daybook';
+import { DayBookRecord, MachineReading, Account, OtherSale, CashTransaction, SviSale, Sale0332, CreditSale } from '../../types/daybook';
 import { calculateTotals } from '../../utils/calculations';
 import { saveRecord, getRecord, getPreviousRecord, getAllAccounts } from '../../utils/database';
 import { useAuth } from '../../context/AuthContext';
@@ -53,6 +53,7 @@ const createNewRecord = (dateKey: string, previousRecord: DayBookRecord | null):
   payments: { atmSale: 0, phonePeSale: 0, paytmSale: 0, cashDeposits: [] },
 });
 
+// This function defensively merges loaded data with a default template.
 const normalizeRecord = (loadedRecord: Partial<DayBookRecord>, defaultRecord: DayBookRecord): DayBookRecord => {
   const normalized = {
     ...defaultRecord,
@@ -60,31 +61,33 @@ const normalizeRecord = (loadedRecord: Partial<DayBookRecord>, defaultRecord: Da
     cashCollected: loadedRecord.cashCollected ?? defaultRecord.cashCollected,
     machines: {
       petrol: defaultRecord.machines.petrol.map(defaultMachine => {
-        const loadedMachine = loadedRecord.machines?.petrol.find(m => m.id === defaultMachine.id);
-        // DEFINITIVE FIX: Ensure the carried-over openingReading is always prioritized.
-        return { 
-          ...defaultMachine, 
+        const loadedMachine = loadedRecord.machines?.petrol?.find(m => m.id === defaultMachine.id);
+        return {
+          ...defaultMachine,
           ...loadedMachine,
-          openingReading: defaultMachine.openingReading 
+          openingReading: defaultMachine.openingReading, // Always take opening from default (which has carry-forward)
         };
       }),
       diesel: defaultRecord.machines.diesel.map(defaultMachine => {
-        const loadedMachine = loadedRecord.machines?.diesel.find(m => m.id === defaultMachine.id);
-        // DEFINITIVE FIX: Ensure the carried-over openingReading is always prioritized.
-        return { 
-            ...defaultMachine, 
-            ...loadedMachine,
-            openingReading: defaultMachine.openingReading 
+        const loadedMachine = loadedRecord.machines?.diesel?.find(d => d.id === defaultMachine.id);
+        return {
+          ...defaultMachine,
+          ...loadedMachine,
+          openingReading: defaultMachine.openingReading, // Always take opening from default
         };
       }),
     },
     prices: { ...defaultRecord.prices, ...loadedRecord.prices },
     otherSales: loadedRecord.otherSales || defaultRecord.otherSales,
     cashTransactions: loadedRecord.cashTransactions || defaultRecord.cashTransactions,
-    deductions: { ...defaultRecord.deductions, ...loadedRecord.deductions },
+    deductions: {
+      sviSales: loadedRecord.deductions?.sviSales || defaultRecord.deductions.sviSales,
+      sales0332: loadedRecord.deductions?.sales0332 || defaultRecord.deductions.sales0332,
+      creditSales: loadedRecord.deductions?.creditSales || defaultRecord.deductions.creditSales,
+    },
     expenses: { 
-      ...defaultRecord.expenses, 
-      ...loadedRecord.expenses,
+      gasCommissions: loadedRecord.expenses?.gasCommissions || defaultRecord.expenses.gasCommissions,
+      additionalExpenses: loadedRecord.expenses?.additionalExpenses || defaultRecord.expenses.additionalExpenses,
       gasTesting: { ...defaultRecord.expenses.gasTesting, ...loadedRecord.expenses?.gasTesting },
     },
     payments: {
@@ -96,6 +99,7 @@ const normalizeRecord = (loadedRecord: Partial<DayBookRecord>, defaultRecord: Da
   };
   return normalized;
 };
+
 
 export default function DayBookScreen() {
   const { user } = useAuth();
@@ -178,6 +182,10 @@ export default function DayBookScreen() {
     });
   };
 
+  const handleUpdateDeductions = (deductions: { sviSales: SviSale[], sales0332: Sale0332[], creditSales: CreditSale[] }) => {
+    updateRecord({ deductions });
+  };
+
   const handleUpdateOtherSales = (otherSales: OtherSale[]) => {
     updateRecord({ otherSales });
   };
@@ -238,18 +246,17 @@ export default function DayBookScreen() {
                 totals={totals}
                 onUpdatePrices={(prices) => updateRecord({ prices })}
               />
+              
+              <DeductionsSection
+                deductions={record.deductions}
+                prices={record.prices}
+                accounts={accounts}
+                onUpdateDeductions={handleUpdateDeductions}
+              />
 
               <OtherSalesSection
                 otherSales={record.otherSales}
                 onUpdateOtherSales={handleUpdateOtherSales}
-              />
-
-              <DeductionsSection 
-                prices={record.prices}
-                deductions={record.deductions}
-                totals={totals}
-                accounts={accounts}
-                onUpdateDeductions={(deductions) => updateRecord({ deductions })}
               />
 
               <ExpensesSection 

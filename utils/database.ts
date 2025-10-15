@@ -379,6 +379,19 @@ export async function getAllAccounts(): Promise<Account[]> {
     .filter((account): account is Account => account !== null);
 }
 
+export async function getAccountByName(name: string): Promise<Account | null> {
+    const userId = await getUserId();
+    const { data, error } = await supabase
+        .from('accounts')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('name', toTitleCase(name))
+        .single();
+    
+    if (error && error.code !== 'PGRST116') throw error;
+    return data as Account | null;
+}
+
 export async function deleteAccount(accountId: string): Promise<void> {
   const userId = await getUserId();
   await supabase.from('balance_entries').delete().eq('account_id', accountId);
@@ -780,6 +793,17 @@ export async function addCreditSaleToDayBook(sale: Omit<CreditSale, 'id' | 'last
         const newRecord = createNewRecord(date, prevRecord);
         newRecord.deductions.creditSales = [newSale];
         await saveRecord(newRecord);
+    }
+}
+
+export async function bulkAddPayments(date: string, payments: { account_name: string; amount: number; description: string; receipt_number: string }[]): Promise<void> {
+    const { error } = await supabase.rpc('bulk_add_payments_and_create_accounts', {
+        p_date: date,
+        payments_data: payments,
+    });
+    if (error) {
+        console.error('Error calling bulk_add_payments RPC:', error);
+        throw error;
     }
 }
 

@@ -11,6 +11,7 @@ import { DayBookSummary } from '../../components/DayBookSummary';
 import { PaymentsReceived } from '../../components/PaymentsReceived';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { CashInHandSummary } from '../../components/CashInHandSummary';
+import { BulkPaymentsUpload } from '../../components/BulkPaymentsUpload';
 
 import { DayBookRecord, DailyRecord, Account, BankReconciliationEntry, PaymentReceived } from '../../types/daybook';
 import { getRecord, getPreviousRecord, getAllAccounts, getDailyRecord, saveDailyRecord, addPaymentReceived, deletePaymentReceived } from '../../utils/database';
@@ -181,7 +182,6 @@ export default function DailyRecordScreen() {
               <DateSelector selectedDate={selectedDate} onDateChange={setSelectedDate} />
 
               <BankReconciliation
-                previousDayRecord={previousDayBookRecord}
                 bankReconciliation={dailyRecord.bankReconciliation}
                 onUpdate={handleUpdateReconciliation}
               />
@@ -198,6 +198,8 @@ export default function DailyRecordScreen() {
                 onDeletePayment={handleDeletePayment}
                 date={dailyRecord.date}
               />
+              
+              <BulkPaymentsUpload date={dailyRecord.date} />
 
               <CashInHandSummary 
                 dayBookRecord={dayBookRecord}

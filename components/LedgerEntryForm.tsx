@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, ActivityIndicator } from 'react-native';
 import { X } from 'lucide-react-native';
-import { Account, CreditSale, PaymentReceived } from '../../types/daybook';
-import { useNotification } from '../../context/NotificationContext';
-import { addCreditSaleToDayBook, addPaymentReceived } from '../../utils/database';
-import { DateSelector } from '../../components/DateSelector';
-import { NumberInput } from '../../components/NumberInput';
+import { Account, CreditSale, PaymentReceived } from '../types/daybook';
+import { useNotification } from '../context/NotificationContext';
+import { addCreditSaleToDayBook, addPaymentReceived } from '../utils/database';
+import { DateSelector } from './DateSelector';
+import { NumberInput } from './NumberInput';
 import { format } from 'date-fns';
 
 interface LedgerEntryFormProps {

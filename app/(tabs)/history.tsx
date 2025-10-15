@@ -29,7 +29,7 @@ export default function HistoryScreen() {
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [calendarMonth, setCalendarMonth] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [isLoading, setIsLoading] = useState(true);
-  const [isCalendarVisible, setIsCalendarVisible] = useState(false); // Changed to false
+  const [isCalendarVisible, setIsCalendarVisible] = useState(false);
   const [deletingDate, setDeletingDate] = useState<string | null>(null);
   const [dateToDelete, setDateToDelete] = useState<string | null>(null);
 
@@ -64,10 +64,9 @@ export default function HistoryScreen() {
                 cashDeposit: prevCashDepositTotal,
             };
 
-            // DEFINITIVE FIX: Re-calculate the matched status here.
             const updatedReconciliation = dailyRecord.bankReconciliation.map(entry => {
                 const newExpected = prevPayments[entry.type as keyof typeof prevPayments] || 0;
-                const isMatched = Math.abs(entry.actual - newExpected) <= 1 && (newExpected > 0 || entry.actual > 0);
+                const isMatched = Math.abs(entry.actual - newExpected) <= 1;
                 return {
                     ...entry,
                     expected: newExpected,
