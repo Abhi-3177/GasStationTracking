@@ -14,7 +14,7 @@ import { CashInHandSummary } from '../../components/CashInHandSummary';
 import { BulkPaymentsUpload } from '../../components/BulkPaymentsUpload';
 
 import { DayBookRecord, DailyRecord, Account, BankReconciliationEntry, PaymentReceived } from '../../types/daybook';
-import { getRecord, getPreviousRecord, getAllAccounts, getDailyRecord, saveDailyRecord, addPaymentReceived, deletePaymentReceived } from '../../utils/database';
+import { getRecord, getPreviousRecord, getAllAccounts, getDailyRecord, saveDailyRecord, addPaymentReceived, updatePaymentReceived, deletePaymentReceived } from '../../utils/database';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import { useNotification } from '../../context/NotificationContext';
@@ -130,9 +130,17 @@ export default function DailyRecordScreen() {
     try {
       await addPaymentReceived(payment);
       refreshData();
-      showNotification('Payment added successfully!', 'success');
     } catch (error: any) {
       showNotification('Failed to add payment.', 'error');
+    }
+  };
+
+  const handleUpdatePayment = async (paymentId: string, updates: Partial<Omit<PaymentReceived, 'id' | 'user_id' | 'created_at'>>) => {
+    try {
+        await updatePaymentReceived(paymentId, updates);
+        refreshData();
+    } catch (error: any) {
+        showNotification('Failed to update payment.', 'error');
     }
   };
   
@@ -195,6 +203,7 @@ export default function DailyRecordScreen() {
                 payments={dailyRecord.paymentsReceived}
                 accounts={accounts}
                 onAddPayment={handleAddPayment}
+                onUpdatePayment={handleUpdatePayment}
                 onDeletePayment={handleDeletePayment}
                 date={dailyRecord.date}
               />

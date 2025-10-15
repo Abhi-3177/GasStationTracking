@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Modal, ScrollView } from 'react-native';
-import { HandCoins, Plus, Trash2, X } from 'lucide-react-native';
+import { HandCoins, Plus, Trash2, X, Edit } from 'lucide-react-native';
 import { Card } from './Card';
 import { NumberInput } from './NumberInput';
 import { AccountAutocomplete } from './AccountAutocomplete';
@@ -13,35 +13,67 @@ interface PaymentsReceivedProps {
   payments: PaymentReceived[];
   accounts: Account[];
   onAddPayment: (payment: Omit<PaymentReceived, 'id' | 'user_id' | 'created_at'>) => Promise<void>;
+  onUpdatePayment: (paymentId: string, updates: Partial<Omit<PaymentReceived, 'id' | 'user_id' | 'created_at'>>) => Promise<void>;
   onDeletePayment: (paymentId: string) => Promise<void>;
   date: string;
 }
 
-export function PaymentsReceived({ payments, accounts, onAddPayment, onDeletePayment, date }: PaymentsReceivedProps) {
+export function PaymentsReceived({ payments, accounts, onAddPayment, onUpdatePayment, onDeletePayment, date }: PaymentsReceivedProps) {
   const { showNotification } = useNotification();
   const [showForm, setShowForm] = useState(false);
   const [accountName, setAccountName] = useState('');
+  const [editingPayment, setEditingPayment] = useState<PaymentReceived | null>(null);
   const [newPayment, setNewPayment] = useState({
     accountId: '',
     amount: 0,
     description: '',
-    receiptNumber: '', // New field
+    receiptNumber: '',
   });
 
-  // State for confirmation modal
   const [isConfirmModalVisible, setIsConfirmModalVisible] = useState(false);
   const [paymentToDelete, setPaymentToDelete] = useState<PaymentReceived | null>(null);
 
-  const handleAddPayment = async () => {
+  useEffect(() => {
+    if (editingPayment) {
+      setNewPayment({
+        accountId: editingPayment.accountId,
+        amount: editingPayment.amount,
+        description: editingPayment.description || '',
+        receiptNumber: editingPayment.receiptNumber || '',
+      });
+      setAccountName(getAccountNameById(editingPayment.accountId));
+    } else {
+      resetFormState();
+    }
+  }, [editingPayment]);
+
+  const handleAddNew = () => {
+    setEditingPayment(null);
+    setShowForm(true);
+  };
+
+  const handleEdit = (payment: PaymentReceived) => {
+    setEditingPayment(payment);
+    setShowForm(true);
+  };
+
+  const handleSave = async () => {
     if (!newPayment.accountId || newPayment.amount <= 0) {
       showNotification('Please select an account and enter a valid amount.', 'error');
       return;
     }
-    await onAddPayment({ ...newPayment, date });
+    
+    if (editingPayment) {
+      await onUpdatePayment(editingPayment.id, { ...newPayment, date });
+      showNotification('Payment updated successfully!', 'success');
+    } else {
+      await onAddPayment({ ...newPayment, date });
+      showNotification('Payment added successfully!', 'success');
+    }
     resetForm();
   };
 
-  const handleDeletePayment = (payment: PaymentReceived) => {
+  const handleDelete = (payment: PaymentReceived) => {
     setPaymentToDelete(payment);
     setIsConfirmModalVisible(true);
   };
@@ -54,9 +86,14 @@ export function PaymentsReceived({ payments, accounts, onAddPayment, onDeletePay
   };
 
   const resetForm = () => {
+    setShowForm(false);
+    setEditingPayment(null);
+    resetFormState();
+  };
+
+  const resetFormState = () => {
     setNewPayment({ accountId: '', amount: 0, description: '', receiptNumber: '' });
     setAccountName('');
-    setShowForm(false);
   };
 
   const getAccountNameById = (accountId: string) => {
@@ -74,7 +111,7 @@ export function PaymentsReceived({ payments, accounts, onAddPayment, onDeletePay
         </View>
         <Text style={styles.subtitle}>Log payments received from factories or transporters.</Text>
 
-        <TouchableOpacity onPress={() => setShowForm(true)} style={styles.addButton}>
+        <TouchableOpacity onPress={handleAddNew} style={styles.addButton}>
           <Plus size={16} color="#ffffff" />
           <Text style={styles.addButtonText}>Add Payment</Text>
         </TouchableOpacity>
@@ -91,9 +128,14 @@ export function PaymentsReceived({ payments, accounts, onAddPayment, onDeletePay
                   <Text style={styles.paymentDescription}>{payment.description || 'No description'}</Text>
                 </View>
                 <Text style={styles.paymentAmount}>{formatIndianCurrency(payment.amount)}</Text>
-                <TouchableOpacity onPress={() => handleDeletePayment(payment)} style={styles.removeButton}>
-                  <Trash2 size={16} color="#dc2626" />
-                </TouchableOpacity>
+                <View style={styles.rowActions}>
+                    <TouchableOpacity onPress={() => handleEdit(payment)} style={styles.editButton}>
+                        <Edit size={16} color="#2563eb" />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleDelete(payment)} style={styles.removeButton}>
+                        <Trash2 size={16} color="#dc2626" />
+                    </TouchableOpacity>
+                </View>
               </View>
             ))
           )}
@@ -108,7 +150,7 @@ export function PaymentsReceived({ payments, accounts, onAddPayment, onDeletePay
           <View style={styles.modalContainer}>
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Add Payment Received</Text>
+                <Text style={styles.modalTitle}>{editingPayment ? 'Edit Payment' : 'Add Payment'}</Text>
                 <TouchableOpacity onPress={resetForm} style={styles.closeButton}>
                   <X size={24} color="#6b7280" />
                 </TouchableOpacity>
@@ -158,8 +200,8 @@ export function PaymentsReceived({ payments, accounts, onAddPayment, onDeletePay
                 <TouchableOpacity onPress={resetForm} style={styles.cancelButton}>
                   <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={handleAddPayment} style={styles.saveButton}>
-                  <Text style={styles.saveButtonText}>Add Payment</Text>
+                <TouchableOpacity onPress={handleSave} style={styles.saveButton}>
+                  <Text style={styles.saveButtonText}>{editingPayment ? 'Update Payment' : 'Add Payment'}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -196,6 +238,8 @@ const styles = StyleSheet.create({
     receiptNumber: { fontSize: 12, color: '#2563eb', fontStyle: 'italic' },
     paymentDescription: { fontSize: 12, color: '#6b7280' },
     paymentAmount: { fontSize: 14, fontWeight: '700', color: '#059669', marginHorizontal: 12 },
+    rowActions: { flexDirection: 'row', gap: 8 },
+    editButton: { padding: 8, borderRadius: 6, backgroundColor: '#eff6ff' },
     removeButton: { padding: 8, borderRadius: 6, backgroundColor: '#fef2f2' },
     summarySection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#eff6ff', padding: 12, borderRadius: 8, marginTop: 16 },
     summaryLabel: { fontSize: 14, fontWeight: '600', color: '#1e40af' },

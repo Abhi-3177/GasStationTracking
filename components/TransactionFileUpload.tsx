@@ -86,20 +86,18 @@ export function TransactionFileUpload() {
 
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
-      const jsonData: any[] = XLSX.utils.sheet_to_json(sheet, { raw: false, defval: '' });
+      const jsonData: any[] = XLSX.utils.sheet_to_json(sheet, { raw: false, defval: null });
 
       if (jsonData.length === 0) throw new Error('File is empty or has no data rows.');
 
-      // DEFINITIVE FIX: Use original case-sensitive headers for data access.
       const originalHeaders = Object.keys(jsonData[0]);
-      
       const findKey = (aliases: string[]): string | undefined => {
         return originalHeaders.find(h => aliases.includes(h.trim().toLowerCase()));
       };
 
-      const transactionIdKey = findKey(['transaction_id']);
-      const transactionDateKey = findKey(['transaction_date']);
-      const settledAmountKey = findKey(['settled_amount']);
+      const transactionIdKey = findKey(['transaction_id', 'transaction id']);
+      const transactionDateKey = findKey(['transaction_date', 'transaction date']);
+      const settledAmountKey = findKey(['settled_amount', 'settled amount']);
 
       if (!transactionIdKey || !transactionDateKey || !settledAmountKey) {
         throw new Error(`File must contain "Transaction_ID", "Transaction_Date", and "Settled_Amount" columns. Found: ${originalHeaders.join(', ')}`);
@@ -110,21 +108,38 @@ export function TransactionFileUpload() {
       if (!paytmAccount) throw new Error('Could not get or create system account for Paytm.');
 
       let successCount = 0;
-      const errors: string[] = [];
+      let duplicateCount = 0;
+      const errors: Record<string, number[]> = {};
 
       for (let i = 0; i < jsonData.length; i++) {
         const row = jsonData[i];
         const rowNum = i + 2;
-        setMessage(`Processing row ${rowNum} of ${jsonData.length}...`);
 
         const dateRaw = row[transactionDateKey];
         const amountRaw = row[settledAmountKey];
         const transactionId = row[transactionIdKey];
 
         const date = parseDateString(dateRaw);
-        const amount = parseFloat(String(amountRaw).replace(/,/g, ''));
+        const amount = amountRaw !== null ? parseFloat(String(amountRaw).replace(/,/g, '')) : NaN;
+        
+        let isValidRow = true;
+        if (!date) {
+            if (!errors['Invalid date']) errors['Invalid date'] = [];
+            errors['Invalid date'].push(rowNum);
+            isValidRow = false;
+        }
+        if (isNaN(amount) || amount <= 0) {
+            if (!errors['Invalid amount']) errors['Invalid amount'] = [];
+            errors['Invalid amount'].push(rowNum);
+            isValidRow = false;
+        }
+        if (!transactionId) {
+            if (!errors['Missing Transaction ID']) errors['Missing Transaction ID'] = [];
+            errors['Missing Transaction ID'].push(rowNum);
+            isValidRow = false;
+        }
 
-        if (date && !isNaN(amount) && amount > 0 && transactionId) {
+        if (isValidRow && date) {
           const payment = {
             date: format(date, 'yyyy-MM-dd'),
             accountId: paytmAccount.id,
@@ -132,23 +147,49 @@ export function TransactionFileUpload() {
             description: 'Paytm Transaction',
             receiptNumber: String(transactionId),
           };
-          await addPaymentReceived(payment);
-          successCount++;
-        } else {
-            if (!date) errors.push(`Row ${rowNum}: Invalid date format for value "${dateRaw}".`);
-            if (isNaN(amount) || amount <= 0) errors.push(`Row ${rowNum}: Invalid amount format for value "${amountRaw}".`);
-            if (!transactionId) errors.push(`Row ${rowNum}: Missing Transaction_ID.`);
+
+          try {
+            await addPaymentReceived(payment);
+            successCount++;
+          } catch(e: any) {
+            // Error code '23505' is for unique_violation in PostgreSQL
+            if (e.code === '23505') {
+                duplicateCount++;
+            } else {
+                const reason = 'Database Save Error';
+                if (!errors[reason]) errors[reason] = [];
+                errors[reason].push(rowNum);
+            }
+          }
         }
       }
+      
+      const errorCount = Object.values(errors).reduce((sum, rows) => sum + rows.length, 0);
 
-      if (successCount === 0) {
-        if (errors.length > 0) throw new Error(`Processed ${jsonData.length} rows but found 0 valid entries. First error: ${errors[0]}`);
-        else throw new Error('No valid transactions found in the file.');
+      if (successCount === 0 && errorCount > 0) {
+        const errorSummary = Object.entries(errors)
+            .map(([reason, rowNumbers]) => {
+                const filteredRows = rowNumbers.filter(r => r > 0);
+                return `${reason} (error)${filteredRows.length > 0 ? ` - Row ${filteredRows.slice(0, 5).join(', ')}` : ''}`;
+            })
+            .join('\n- ');
+        throw new Error(`Processed ${jsonData.length} rows but found 0 valid entries. Errors found:\n- ${errorSummary}`);
       }
 
       setStatus('success');
-      let finalMessage = `Success! Imported ${successCount} Paytm transactions.`;
-      if (errors.length > 0) finalMessage += ` Skipped ${errors.length} rows due to errors.`;
+      let finalMessage = `Success! Imported ${successCount} new transactions.`;
+      if (duplicateCount > 0) {
+        finalMessage += ` Skipped ${duplicateCount} duplicates.`;
+      }
+      if (errorCount > 0) {
+        const errorSummary = Object.entries(errors)
+            .map(([reason, rowNumbers]) => {
+                const filteredRows = rowNumbers.filter(r => r > 0);
+                return `${reason} (error)${filteredRows.length > 0 ? ` - Row ${filteredRows.slice(0, 5).join(', ')}` : ''}`;
+            })
+            .join('\n- ');
+        finalMessage += `\nSkipped ${errorCount} rows with errors. First errors:\n- ${errorSummary}`;
+      }
       setMessage(finalMessage);
       refreshData();
 
@@ -211,7 +252,7 @@ const styles = StyleSheet.create({
   statusContainer: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, padding: 16, backgroundColor: '#f9fafb' },
   fileInfo: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   fileName: { fontSize: 14, fontWeight: '500', color: '#374151', flexShrink: 1 },
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  statusRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   statusText: { fontSize: 14, fontWeight: '500', flex: 1 },
   successText: { color: '#059669' },
   errorText: { color: '#dc2626' },

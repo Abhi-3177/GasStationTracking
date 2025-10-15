@@ -2,12 +2,13 @@ import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Users, Plus, Eye, Edit, Trash2, CalendarDays } from 'lucide-react-native';
+import { Users, Plus, Eye, Edit, Trash2, CalendarDays, UploadCloud } from 'lucide-react-native';
 import { differenceInDays, format } from 'date-fns';
 
 import { Card } from '../../components/Card';
 import { AccountForm } from '../../components/AccountForm';
 import { ConfirmModal } from '../../components/ConfirmModal';
+import { BulkAccountUpload } from '../../components/BulkAccountUpload'; // Import the new component
 import { Account } from '../../types/daybook';
 import { getAccountsForDisplay, deleteAccount } from '../../utils/database';
 import { useNotification } from '../../context/NotificationContext';
@@ -24,6 +25,7 @@ export default function AccountsScreen() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isFormVisible, setIsFormVisible] = useState(false);
+  const [isBulkUploadVisible, setIsBulkUploadVisible] = useState(false); // State for bulk upload modal
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
   const [activeTab, setActiveTab] = useState<ActiveTab>('factory');
@@ -141,10 +143,15 @@ export default function AccountsScreen() {
             <Users size={24} color="#1f2937" />
             <Text style={styles.headerTitle}>Accounts ({filteredAccounts.length})</Text>
           </View>
-          <TouchableOpacity style={styles.addButton} onPress={handleAddAccount}>
-            <Plus size={16} color="#fff" />
-            <Text style={styles.addButtonText}>Add Account</Text>
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity style={styles.headerButton} onPress={() => setIsBulkUploadVisible(true)}>
+              <UploadCloud size={16} color="#1f2937" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.addButton} onPress={handleAddAccount}>
+              <Plus size={16} color="#fff" />
+              <Text style={styles.addButtonText}>Add</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <FlatList
@@ -179,7 +186,7 @@ export default function AccountsScreen() {
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>No {activeTab} accounts found.</Text>
-              <Text style={styles.emptySubtext}>Tap "Add Account" to get started.</Text>
+              <Text style={styles.emptySubtext}>Tap "Add" or "Bulk Upload" to get started.</Text>
             </View>
           }
           refreshControl={
@@ -196,6 +203,15 @@ export default function AccountsScreen() {
           }}
           account={selectedAccount}
           defaultType={activeTab}
+        />
+
+        <BulkAccountUpload
+          visible={isBulkUploadVisible}
+          onClose={() => setIsBulkUploadVisible(false)}
+          onSave={() => {
+            setIsBulkUploadVisible(false);
+            loadAccounts();
+          }}
         />
 
         {accountToDelete && (
@@ -220,13 +236,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
     backgroundColor: '#fff',
   },
   headerTitleContainer: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerTitle: { fontSize: 20, fontWeight: '700', color: '#1f2937' },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#f1f5f9',
+  },
   addButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#2563eb', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, gap: 4 },
   addButtonText: { color: '#fff', fontWeight: '600' },
   listContainer: { padding: 16, gap: 12 },

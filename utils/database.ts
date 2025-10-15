@@ -627,6 +627,16 @@ export async function getAccountsForDisplay(): Promise<Account[]> {
     return accountsWithDetails;
 }
 
+export async function bulkCreateAccounts(accounts: { name: string; type: 'factory' | 'transporter'; contact?: string; address?: string; openingBalance: number }[]): Promise<void> {
+    const { error } = await supabase.rpc('bulk_create_accounts', {
+        accounts_data: accounts,
+    });
+    if (error) {
+        console.error('Error calling bulk_create_accounts RPC:', error);
+        throw error;
+    }
+}
+
 // --- Stock Order Functions ---
 export async function addStockOrder(order: { date: string; fuel_type: 'petrol' | 'diesel'; litres: number }): Promise<void> {
     const userId = await getUserId();
@@ -768,6 +778,26 @@ export async function addPaymentReceived(payment: Omit<PaymentReceived, 'id' | '
     if (error) {
       console.error('Error adding payment received:', error);
       throw error;
+    }
+}
+
+export async function updatePaymentReceived(paymentId: string, updates: Partial<Omit<PaymentReceived, 'id' | 'user_id' | 'created_at'>>): Promise<void> {
+    const userId = await getUserId();
+    const { error } = await supabase
+        .from('payments_received')
+        .update({
+            date: updates.date,
+            account_id: updates.accountId,
+            amount: updates.amount,
+            description: updates.description,
+            receipt_number: updates.receiptNumber,
+        })
+        .eq('id', paymentId)
+        .eq('user_id', userId);
+    
+    if (error) {
+        console.error('Error updating payment received:', error);
+        throw error;
     }
 }
 
