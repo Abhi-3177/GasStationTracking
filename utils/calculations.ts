@@ -1,7 +1,6 @@
 import { DayBookRecord, CalculatedTotals } from '../types/daybook';
 
 export function calculateTotals(record: DayBookRecord, previousRecord: DayBookRecord | null): CalculatedTotals {
-  // Ultra-defensive checks to prevent crashes from malformed or old records.
   const pLitres = (record?.machines?.petrol || []).reduce(
     (total, machine) => total + Math.max(0, (machine?.closingReading || 0) - (machine?.openingReading || 0)),
     0
@@ -26,7 +25,6 @@ export function calculateTotals(record: DayBookRecord, previousRecord: DayBookRe
   const totalSales0332 = (record?.deductions?.sales0332 || []).reduce((total, sale) => total + (sale?.amount || 0), 0);
   const totalCreditSales = (record?.deductions?.creditSales || []).reduce((total, credit) => total + (credit?.amount || 0), 0);
   
-  // Correctly sum all credit-like deductions for an accurate total credit value.
   const totalCredit = totalSviSales + totalSales0332 + totalCreditSales;
   
   const cashSale = totalSale - totalCredit;
@@ -48,6 +46,7 @@ export function calculateTotals(record: DayBookRecord, previousRecord: DayBookRe
     (record?.payments?.atmSale || 0) + 
     (record?.payments?.phonePeSale || 0) + 
     (record?.payments?.paytmSale || 0) + 
+    (record?.payments?.directPnbTransfer || 0) + // New field
     totalCashDeposits;
 
   const totalCashIn = (record?.cashTransactions || []).reduce((total, trans) => total + (trans?.type === 'in' ? (trans?.amount || 0) : 0), 0);
@@ -60,14 +59,13 @@ export function calculateTotals(record: DayBookRecord, previousRecord: DayBookRe
 
   const dayBalance = netSale - totalPayments + totalCashIn - totalCashOut + previousDayBalance;
 
-  // Final safeguard to ensure all returned values are valid numbers.
   return {
     petrolLitres: Number(pLitres) || 0,
     dieselLitres: Number(dLitres) || 0,
     petrolSale: Number(petrolSale) || 0,
     dieselSale: Number(dieselSale) || 0,
     totalSale: Number(totalSale) || 0,
-    totalDeductions: Number(totalCredit) || 0, // Using the new accurate totalCredit
+    totalDeductions: Number(totalCredit) || 0,
     cashSale: Number(cashSale) || 0,
     gasTestingExpense: Number(gasTestingExpense) || 0,
     totalExpenses: Number(totalExpenses) || 0,

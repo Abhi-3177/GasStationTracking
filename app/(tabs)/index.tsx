@@ -16,6 +16,7 @@ import { ExpensesSection } from '../../components/ExpensesSection';
 import { PaymentSettlement } from '../../components/PaymentSettlement';
 import { SummaryCard } from '../../components/SummaryCard';
 import { SaveButton } from '../../components/SaveButton';
+import { CreditEntryForm } from '../../components/CreditEntryForm';
 
 import { DayBookRecord, MachineReading, Account, OtherSale, CashTransaction, SviSale, Sale0332, CreditSale } from '../../types/daybook';
 import { calculateTotals } from '../../utils/calculations';
@@ -50,10 +51,9 @@ const createNewRecord = (dateKey: string, previousRecord: DayBookRecord | null):
   cashTransactions: [],
   deductions: { sviSales: [], sales0332: [], creditSales: [] },
   expenses: { gasCommissions: [], additionalExpenses: [], gasTesting: { petrolTestLitres: 10, dieselTestLitres: 20 } },
-  payments: { atmSale: 0, phonePeSale: 0, paytmSale: 0, cashDeposits: [] },
+  payments: { atmSale: 0, phonePeSale: 0, paytmSale: 0, directPnbTransfer: 0, cashDeposits: [] },
 });
 
-// This function defensively merges loaded data with a default template.
 const normalizeRecord = (loadedRecord: Partial<DayBookRecord>, defaultRecord: DayBookRecord): DayBookRecord => {
   const normalized = {
     ...defaultRecord,
@@ -65,7 +65,7 @@ const normalizeRecord = (loadedRecord: Partial<DayBookRecord>, defaultRecord: Da
         return {
           ...defaultMachine,
           ...loadedMachine,
-          openingReading: defaultMachine.openingReading, // Always take opening from default (which has carry-forward)
+          openingReading: defaultMachine.openingReading,
         };
       }),
       diesel: defaultRecord.machines.diesel.map(defaultMachine => {
@@ -73,7 +73,7 @@ const normalizeRecord = (loadedRecord: Partial<DayBookRecord>, defaultRecord: Da
         return {
           ...defaultMachine,
           ...loadedMachine,
-          openingReading: defaultMachine.openingReading, // Always take opening from default
+          openingReading: defaultMachine.openingReading,
         };
       }),
     },
@@ -94,6 +94,7 @@ const normalizeRecord = (loadedRecord: Partial<DayBookRecord>, defaultRecord: Da
         atmSale: loadedRecord.payments?.atmSale ?? defaultRecord.payments.atmSale,
         phonePeSale: loadedRecord.payments?.phonePeSale ?? defaultRecord.payments.phonePeSale,
         paytmSale: loadedRecord.payments?.paytmSale ?? defaultRecord.payments.paytmSale,
+        directPnbTransfer: loadedRecord.payments?.directPnbTransfer ?? defaultRecord.payments.directPnbTransfer,
         cashDeposits: loadedRecord.payments?.cashDeposits ?? [],
     },
   };
@@ -103,7 +104,7 @@ const normalizeRecord = (loadedRecord: Partial<DayBookRecord>, defaultRecord: Da
 
 export default function DayBookScreen() {
   const { user } = useAuth();
-  const { dataVersion } = useData();
+  const { dataVersion, refreshData } = useData();
   const router = useRouter();
   const params = useLocalSearchParams<{ date?: string }>();
   
@@ -112,6 +113,7 @@ export default function DayBookScreen() {
   const [previousRecord, setPreviousRecord] = useState<DayBookRecord | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isCreditFormVisible, setIsCreditFormVisible] = useState(false);
 
   useEffect(() => {
     if (params.date && typeof params.date === 'string') {
@@ -182,8 +184,17 @@ export default function DayBookScreen() {
     });
   };
 
-  const handleUpdateDeductions = (deductions: { sviSales: SviSale[], sales0332: Sale0332[], creditSales: CreditSale[] }) => {
-    updateRecord({ deductions });
+  const handleSaveDeductions = async (deductions: DayBookRecord['deductions']) => {
+    if (!record) return;
+    const updatedRecord = { ...record, deductions };
+    setRecord(updatedRecord);
+    try {
+      await saveRecord(updatedRecord);
+      refreshData();
+    } catch (error: any) {
+      console.error("Failed to save deductions immediately:", error);
+      Alert.alert('Save Error', 'Could not save credit sales. Please try saving the entire Day Book again.');
+    }
   };
 
   const handleUpdateOtherSales = (otherSales: OtherSale[]) => {
@@ -199,6 +210,7 @@ export default function DayBookScreen() {
     try {
       await saveRecord(record);
       Alert.alert('Success', 'Day book record has been saved successfully!');
+      refreshData();
     } catch (error: any) {
       console.error('Error saving Day Book record:', error);
       Alert.alert('Save Error', error.message || 'Failed to save the record. Please try again.');
@@ -224,7 +236,7 @@ export default function DayBookScreen() {
     <SafeAreaProvider>
       <SafeAreaView style={styles.container}>
         <ErrorBoundary>
-          <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+          <ScrollView style={styles.scrollView} keyboardShouldPersistTaps="handled">
             <View style={styles.content}>
               <DateSelector 
                 selectedDate={selectedDate} 
@@ -249,9 +261,7 @@ export default function DayBookScreen() {
               
               <DeductionsSection
                 deductions={record.deductions}
-                prices={record.prices}
-                accounts={accounts}
-                onUpdateDeductions={handleUpdateDeductions}
+                onManagePress={() => setIsCreditFormVisible(true)}
               />
 
               <OtherSalesSection
@@ -287,6 +297,17 @@ export default function DayBookScreen() {
               <SaveButton onSave={handleSave} />
             </View>
           </ScrollView>
+          <CreditEntryForm
+            visible={isCreditFormVisible}
+            onClose={() => setIsCreditFormVisible(false)}
+            onSave={(newDeductions) => {
+                handleSaveDeductions(newDeductions);
+                setIsCreditFormVisible(false);
+            }}
+            initialDeductions={record.deductions}
+            accounts={accounts}
+            prices={record.prices}
+          />
         </ErrorBoundary>
       </SafeAreaView>
     </SafeAreaProvider>

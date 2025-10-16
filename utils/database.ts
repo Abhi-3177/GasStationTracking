@@ -48,7 +48,7 @@ export async function saveRecord(record: DayBookRecord): Promise<void> {
 
 
   formattedRecord.otherSales = (formattedRecord.otherSales || []).map(s => ({ ...s, name: toTitleCase(s.name) }));
-  formattedRecord.cashTransactions = (formattedRecord.cashTransactions || []).map(i => ({ ...i, name: toTitleCase(i.name) }));
+  formattedRecord.cashTransactions = (formattedRecord.cashTransactions || []).map(i => ({ ...i, name: toTitleCase(i.name), comment: toTitleCase(i.comment) }));
   
   formattedRecord.expenses.gasCommissions = (formattedRecord.expenses.gasCommissions || []).map(e => ({ ...e, name: toTitleCase(e.name) }));
   formattedRecord.expenses.additionalExpenses = (formattedRecord.expenses.additionalExpenses || []).map(e => ({ ...e, name: toTitleCase(e.name) }));
@@ -231,7 +231,17 @@ export async function getRecordsForMonth(year: number, month: number): Promise<{
         dailyRecordMap.set(dr.date, {
             ...dr,
             bankReconciliation: (dr.bank_reconciliation as any) || [],
-            paymentsReceived: allPayments?.filter(p => p.date === dr.date) || [],
+            paymentsReceived: (allPayments || []).filter(p => p.date === dr.date).map(p => ({
+                id: p.id,
+                date: p.date,
+                accountId: p.account_id,
+                amount: p.amount,
+                description: p.description || '',
+                receiptNumber: p.receipt_number || '',
+                paymentMethod: p.payment_method || '',
+                user_id: p.user_id,
+                created_at: p.created_at,
+            })),
         });
     });
 
@@ -283,9 +293,9 @@ export async function deleteAllUserData(): Promise<void> {
 
 export async function saveAccount(account: Account): Promise<void> {
   const userId = await getUserId();
-  const { id, balanceEntries, createdAt, ...accountData } = account;
+  
+  const { id, balanceEntries, createdAt, currentBalance, lastPaymentDate, ...accountData } = account;
 
-  // Apply formatting
   const formattedAccountData = {
     ...accountData,
     name: toTitleCase(accountData.name),
@@ -295,6 +305,7 @@ export async function saveAccount(account: Account): Promise<void> {
   const formattedBalanceEntries = (balanceEntries || []).map(entry => ({
     ...entry,
     description: toTitleCase(entry.description),
+    amount: Math.round((entry.amount || 0) * 100) / 100,
   }));
 
   const isNewAccount = !id || !id.includes('-');
@@ -349,34 +360,34 @@ export async function getAccount(accountId: string): Promise<Account | null> {
 }
 
 export async function getAllAccounts(): Promise<Account[]> {
-  const userId = await getUserId();
-  const { data, error } = await supabase
-    .from('accounts')
-    .select('*')
-    .eq('user_id', userId)
-    .order('name', { ascending: true });
+    const userId = await getUserId();
+    const { data, error } = await supabase
+        .from('accounts')
+        .select('*')
+        .eq('user_id', userId)
+        .order('name', { ascending: true });
 
-  if (error) {
-    console.error("Error loading accounts from DB:", error);
-    throw error;
-  }
+    if (error) {
+        console.error("Error loading accounts from DB:", error);
+        throw error;
+    }
+    if (!data) {
+        return [];
+    }
 
-  if (!data) {
-    return [];
-  }
-
-  return data
-    .map(account => {
-      if (!account || !account.id) {
-        return null;
-      }
-      return {
-        ...account,
-        createdAt: account.created_at,
-        balanceEntries: [],
-      } as Account;
-    })
-    .filter((account): account is Account => account !== null);
+    // This ensures that even if balance_entries is null in the DB, it's a safe empty array in the app.
+    return data
+        .map(account => {
+            if (!account || !account.id) {
+                return null;
+            }
+            return {
+                ...account,
+                createdAt: account.created_at,
+                balanceEntries: [],
+            } as Account;
+        })
+        .filter((account): account is Account => account !== null);
 }
 
 export async function getAccountByName(name: string): Promise<Account | null> {
@@ -422,18 +433,24 @@ export async function getTransactionsForAccount(accountId: string): Promise<Tran
     // 2. Fetch Payments Received
     const { data: paymentsReceived, error: paymentsError } = await supabase
         .from('payments_received')
-        .select('*')
+        .select('*, accounts(name)')
         .eq('user_id', userId)
         .eq('account_id', accountId);
     if (paymentsError) throw paymentsError;
     if (paymentsReceived) {
-        allTransactions.push(...paymentsReceived.map(pr => ({
-            id: `pr:${pr.id}`,
-            date: pr.date,
-            description: `Payment Received ${pr.receipt_number ? `(Receipt: ${pr.receipt_number})` : ''}: ${pr.description || 'N/A'}`,
-            type: 'credit',
-            amount: pr.amount,
-        })));
+        allTransactions.push(...paymentsReceived.map(pr => {
+            const isPaytm = pr.accounts?.name.toLowerCase() === 'paytm';
+            return {
+                id: `pr:${pr.id}`,
+                date: pr.date,
+                description: pr.description || `Payment Received via ${pr.payment_method || 'Unknown'}`,
+                type: 'credit',
+                amount: pr.amount,
+                receiptNumber: isPaytm ? undefined : (pr.receipt_number || undefined),
+                transactionId: isPaytm ? (pr.receipt_number || undefined) : undefined,
+                paymentMethod: pr.payment_method || undefined,
+            };
+        }));
     }
 
     // 3. Fetch Day Book Records
@@ -453,9 +470,11 @@ export async function getTransactionsForAccount(accountId: string): Promise<Tran
                         allTransactions.push({
                             id: `${prefix}:${dbr.date}:${sale.id}`,
                             date: dbr.date,
-                            description: `${type} ${sale.receiptNumber ? `(Receipt: ${sale.receiptNumber})` : ''}: ${sale.vehicleNumber || sale.name}`,
+                            description: type,
                             type: 'debit',
                             amount: sale.amount,
+                            receiptNumber: sale.receiptNumber || undefined,
+                            vehicleNumber: sale.vehicleNumber || undefined,
                         });
                     }
                 });
@@ -465,14 +484,13 @@ export async function getTransactionsForAccount(accountId: string): Promise<Tran
             processSales(record.deductions?.sales0332, '0332 Sale', 's0');
             processSales(record.deductions?.sviSales, 'SVI Sale', 'sv');
             
-            // Cash Transactions
             (record.cashTransactions || []).forEach(trans => {
                 if (trans.accountId === accountId) {
                     const prefix = `ct_${trans.type}`;
                     allTransactions.push({
                         id: `${prefix}:${dbr.date}:${trans.id}`,
                         date: dbr.date,
-                        description: `Cash ${trans.type === 'in' ? 'Received' : 'Given'}`,
+                        description: `Cash ${trans.type === 'in' ? 'Received' : 'Given'}${trans.comment ? `: ${trans.comment}` : ''}`,
                         type: trans.type === 'in' ? 'credit' : 'debit',
                         amount: trans.amount,
                     });
@@ -488,90 +506,14 @@ export async function getTransactionsForAccount(accountId: string): Promise<Tran
 }
 
 export async function getFilteredAccountTransactions(accountId: string, startDate: string, endDate: string): Promise<Transaction[]> {
-    const userId = await getUserId();
-    const allTransactions: Transaction[] = [];
-
-    // 1. Fetch Balance Entries
-    const { data: balanceEntries, error: balanceError } = await supabase
-        .from('balance_entries')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('account_id', accountId)
-        .gte('date', startDate)
-        .lte('date', endDate);
-    if (balanceError) throw balanceError;
-    if (balanceEntries) {
-        allTransactions.push(...balanceEntries.map(be => ({ ...be, id: `be:${be.id}` })));
-    }
-
-    // 2. Fetch Payments Received
-    const { data: paymentsReceived, error: paymentsError } = await supabase
-        .from('payments_received')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('account_id', accountId)
-        .gte('date', startDate)
-        .lte('date', endDate);
-    if (paymentsError) throw paymentsError;
-    if (paymentsReceived) {
-        allTransactions.push(...paymentsReceived.map(pr => ({
-            id: `pr:${pr.id}`,
-            date: pr.date,
-            description: `Payment Received ${pr.receipt_number ? `(Receipt: ${pr.receipt_number})` : ''}: ${pr.description || 'N/A'}`,
-            type: 'credit',
-            amount: pr.amount,
-        })));
-    }
-
-    // 3. Fetch Day Book Records
-    const { data: dayBookRecords, error: dayBookError } = await supabase
-        .from('day_book_records')
-        .select('date, record')
-        .eq('user_id', userId)
-        .gte('date', startDate)
-        .lte('date', endDate);
-    if (dayBookError) throw dayBookError;
-    if (dayBookRecords) {
-        dayBookRecords.forEach(dbr => {
-            const record = dbr.record as DayBookRecord;
-            if (!record) return;
-
-            const processSales = (sales: (CreditSale | Sale0332 | SviSale)[], type: string, prefix: string) => {
-                (sales || []).forEach(sale => {
-                    if (sale.accountId === accountId) {
-                        allTransactions.push({
-                            id: `${prefix}:${dbr.date}:${sale.id}`,
-                            date: dbr.date,
-                            description: `${type} ${sale.receiptNumber ? `(Receipt: ${sale.receiptNumber})` : ''}: ${sale.vehicleNumber || sale.name}`,
-                            type: 'debit',
-                            amount: sale.amount,
-                        });
-                    }
-                });
-            };
-            
-            processSales(record.deductions?.creditSales, 'Credit Sale', 'cs');
-            processSales(record.deductions?.sales0332, '0332 Sale', 's0');
-            processSales(record.deductions?.sviSales, 'SVI Sale', 'sv');
-            
-            (record.cashTransactions || []).forEach(trans => {
-                if (trans.accountId === accountId) {
-                    const prefix = `ct_${trans.type}`;
-                    allTransactions.push({
-                        id: `${prefix}:${dbr.date}:${trans.id}`,
-                        date: dbr.date,
-                        description: `Cash ${trans.type === 'in' ? 'Received' : 'Given'}`,
-                        type: trans.type === 'in' ? 'credit' : 'debit',
-                        amount: trans.amount,
-                    });
-                }
-            });
-        });
-    }
-
-    allTransactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const allTransactions = await getTransactionsForAccount(accountId);
+    const start = new Date(startDate).getTime();
+    const end = new Date(endDate).getTime();
     
-    return allTransactions;
+    return allTransactions.filter(tx => {
+        const txDate = new Date(tx.date).getTime();
+        return txDate >= start && txDate <= end;
+    });
 }
 
 export async function deleteTransaction(transactionId: string): Promise<void> {
@@ -584,7 +526,7 @@ export async function deleteTransaction(transactionId: string): Promise<void> {
   }
 }
 
-export async function getAccountsForDisplay(): Promise<Account[]> {
+export async function getAccountsWithLastPayment(): Promise<Account[]> {
     const userId = await getUserId();
     const { data: accounts, error } = await supabase
         .from('accounts')
@@ -720,10 +662,22 @@ export async function getDailyRecord(date: string): Promise<DailyRecord | null> 
         console.error(`Error fetching payments for ${date}:`, paymentsError);
     }
 
+    const mappedPayments = (payments || []).map(p => ({
+        id: p.id,
+        date: p.date,
+        accountId: p.account_id,
+        amount: p.amount,
+        description: p.description || '',
+        receiptNumber: p.receipt_number || '',
+        paymentMethod: p.payment_method || '',
+        user_id: p.user_id,
+        created_at: p.created_at,
+    }));
+
     return {
         ...data,
         bankReconciliation: (data.bank_reconciliation as any) || [],
-        paymentsReceived: payments || [],
+        paymentsReceived: mappedPayments,
     };
 }
 
@@ -766,7 +720,6 @@ export async function saveDailyRecord(record: DailyRecord): Promise<void> {
 
 export async function addPaymentReceived(payment: Omit<PaymentReceived, 'id' | 'user_id' | 'created_at'>): Promise<void> {
     const userId = await getUserId();
-    // Explicitly map camelCase to snake_case to prevent errors.
     const { error } = await supabase.from('payments_received').insert({
         date: payment.date,
         user_id: userId,
@@ -774,6 +727,7 @@ export async function addPaymentReceived(payment: Omit<PaymentReceived, 'id' | '
         amount: payment.amount,
         description: payment.description,
         receipt_number: payment.receiptNumber,
+        payment_method: payment.paymentMethod,
     });
     if (error) {
       console.error('Error adding payment received:', error);
@@ -791,6 +745,7 @@ export async function updatePaymentReceived(paymentId: string, updates: Partial<
             amount: updates.amount,
             description: updates.description,
             receipt_number: updates.receiptNumber,
+            payment_method: updates.paymentMethod,
         })
         .eq('id', paymentId)
         .eq('user_id', userId);

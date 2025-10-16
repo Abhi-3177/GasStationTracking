@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
 import { HandCoins, Plus, Trash2, ArrowUpCircle, ArrowDownCircle } from 'lucide-react-native';
 import { Card } from './Card';
 import { NumberInput } from './NumberInput';
@@ -20,6 +20,7 @@ export function CashTransactionsSection({ cashTransactions, accounts, onUpdateCa
       name: '',
       amount: 0,
       type: 'in', // Default to 'in'
+      comment: '',
     };
     onUpdateCashTransactions([...cashTransactions, newTransaction]);
   };
@@ -48,43 +49,51 @@ export function CashTransactionsSection({ cashTransactions, accounts, onUpdateCa
       <Text style={styles.subtitle}>Record cash received from or given to accounts.</Text>
       
       <View style={styles.transactionsContainer}>
-        {cashTransactions.map(trans => (
-          <View key={trans.id} style={styles.transactionRow}>
-            <View style={styles.transactionNameInput}>
-              <AccountAutocomplete
-                accounts={accounts}
-                value={trans.name}
-                onValueChange={name => handleUpdateTransaction(trans.id, { name, accountId: undefined })}
-                onAccountSelect={account => handleUpdateTransaction(trans.id, { name: account.name, accountId: account.id })}
-                placeholder="Account name..."
-              />
+        {cashTransactions.map((trans, index) => (
+          <View key={trans.id} style={[styles.transactionRow, { zIndex: cashTransactions.length - index }]}>
+            <View style={styles.accountInput}>
+                <AccountAutocomplete
+                    accounts={accounts}
+                    value={trans.name}
+                    onValueChange={name => handleUpdateTransaction(trans.id, { name, accountId: undefined })}
+                    onAccountSelect={account => handleUpdateTransaction(trans.id, { name: account.name, accountId: account.id })}
+                    placeholder="Account name..."
+                />
+            </View>
+            <View style={styles.commentInput}>
+                <TextInput
+                    style={styles.textInput}
+                    value={trans.comment || ''}
+                    onChangeText={(text) => handleUpdateTransaction(trans.id, { comment: text })}
+                    placeholder="Comment (Optional)"
+                />
             </View>
             <View style={styles.typeSelector}>
-              <TouchableOpacity 
+            <TouchableOpacity 
                 style={[styles.typeButton, trans.type === 'in' && styles.typeButtonActiveIn]}
                 onPress={() => handleUpdateTransaction(trans.id, { type: 'in' })}
-              >
+            >
                 <ArrowDownCircle size={16} color={trans.type === 'in' ? '#fff' : '#059669'} />
                 <Text style={[styles.typeButtonText, trans.type === 'in' && styles.typeButtonTextActive]}>In</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
+            </TouchableOpacity>
+            <TouchableOpacity 
                 style={[styles.typeButton, trans.type === 'out' && styles.typeButtonActiveOut]}
                 onPress={() => handleUpdateTransaction(trans.id, { type: 'out' })}
-              >
+            >
                 <ArrowUpCircle size={16} color={trans.type === 'out' ? '#fff' : '#dc2626'} />
                 <Text style={[styles.typeButtonText, trans.type === 'out' && styles.typeButtonTextActive]}>Out</Text>
-              </TouchableOpacity>
+            </TouchableOpacity>
             </View>
             <View style={styles.transactionAmountInput}>
-              <NumberInput
+            <NumberInput
                 value={trans.amount}
                 onChangeValue={(value) => handleUpdateTransaction(trans.id, { amount: value })}
                 placeholder="0.00"
                 precision={2}
-              />
+            />
             </View>
             <TouchableOpacity onPress={() => handleRemoveTransaction(trans.id)} style={styles.removeButton}>
-              <Trash2 size={16} color="#dc2626" />
+            <Trash2 size={16} color="#dc2626" />
             </TouchableOpacity>
           </View>
         ))}
@@ -115,8 +124,9 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: '600', color: '#1f2937' },
   subtitle: { fontSize: 14, color: '#6b7280', marginTop: 4, marginBottom: 16 },
   transactionsContainer: { gap: 12 },
-  transactionRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  transactionNameInput: { flex: 3 },
+  transactionRow: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingVertical: 8 },
+  accountInput: { flex: 2 },
+  commentInput: { flex: 2 },
   typeSelector: { flexDirection: 'row', borderRadius: 6, overflow: 'hidden', borderWidth: 1, borderColor: '#d1d5db' },
   typeButton: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 12, gap: 4 },
   typeButtonActiveIn: { backgroundColor: '#059669' },
@@ -125,6 +135,7 @@ const styles = StyleSheet.create({
   typeButtonTextActive: { color: '#fff' },
   transactionAmountInput: { flex: 1.5 },
   removeButton: { padding: 8, borderRadius: 6, backgroundColor: '#fef2f2' },
+  textInput: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 6, padding: 12, fontSize: 14, backgroundColor: '#ffffff', color: '#374151' },
   standaloneAddButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderWidth: 1, borderColor: '#d1d5db', borderStyle: 'dashed', borderRadius: 8, marginTop: 8 },
   standaloneAddButtonText: { fontSize: 14, fontWeight: '500', color: '#2563eb' },
   summarySection: { padding: 12, borderRadius: 8, marginTop: 16, backgroundColor: '#f9fafb', borderWidth: 1, borderColor: '#e5e7eb' },

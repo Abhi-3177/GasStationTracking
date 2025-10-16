@@ -17,6 +17,7 @@ export interface CashTransaction {
   name: string;
   amount: number;
   type: 'in' | 'out'; // 'in' for received, 'out' for given
+  comment?: string;
 }
 
 export interface CreditSale {
@@ -28,8 +29,8 @@ export interface CreditSale {
   amount: number;
   lastEdited: 'litres' | 'amount';
   vehicleNumber?: string;
-  receiptNumber?: string; // New field
-  description?: string; // For bulk upload
+  receiptNumber?: string;
+  description?: string;
 }
 
 export interface SviSale {
@@ -41,7 +42,7 @@ export interface SviSale {
   amount: number;
   lastEdited: 'litres' | 'amount';
   vehicleNumber?: string;
-  receiptNumber?: string; // New field
+  receiptNumber?: string;
 }
 
 export interface Sale0332 {
@@ -53,7 +54,7 @@ export interface Sale0332 {
   amount: number;
   lastEdited: 'litres' | 'amount';
   vehicleNumber?: string;
-  receiptNumber?: string; // New field
+  receiptNumber?: string;
 }
 
 export interface GasCommission {
@@ -104,6 +105,7 @@ export interface DayBookRecord {
     atmSale: number;
     phonePeSale: number;
     paytmSale: number;
+    directPnbTransfer: number;
     cashDeposits: CashDepositEntry[];
   };
 }
@@ -148,7 +150,7 @@ export interface Account {
 }
 
 export interface BankReconciliationEntry {
-  type: 'atmSale' | 'phonePeSale' | 'paytmSale' | 'cashDeposit';
+  type: 'atmSale' | 'phonePeSale' | 'paytmSale' | 'cashDeposit' | 'directPnbTransfer';
   expected: number;
   actual: number;
   matched: boolean;
@@ -160,7 +162,8 @@ export interface PaymentReceived {
   accountId: string;
   amount: number;
   description: string;
-  receiptNumber?: string; // New field
+  receiptNumber?: string;
+  paymentMethod?: string;
   user_id: string;
   created_at: string;
 }
@@ -181,6 +184,11 @@ export interface Transaction {
   settlementStatus?: 'unsettled' | 'partially-settled' | 'fully-settled';
   settledAmount?: number;
   runningBalance?: number;
+  // New fields for details
+  receiptNumber?: string;
+  vehicleNumber?: string;
+  paymentMethod?: string;
+  transactionId?: string; // For Paytm specifically
 }
 
 export interface StockOrder {

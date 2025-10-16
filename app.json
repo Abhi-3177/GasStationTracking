@@ -1,9 +1,10 @@
 {
   "expo": {
-    "name": "Gas Station Manager",
-    "slug": "gas-station-manager",
+    "name": "SVI Petrol Pump",
+    "slug": "svi-petrol-pump",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/icon.png",
     "scheme": "gsm",
     "userInterfaceStyle": "automatic",
     "splash": {

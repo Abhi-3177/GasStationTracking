@@ -5,19 +5,18 @@ import { format } from 'date-fns';
 import { Save } from 'lucide-react-native';
 import { useFocusEffect } from 'expo-router';
 
-import { DateSelector } from '../../components/DateSelector';
-import { BankReconciliation } from '../../components/BankReconciliation';
-import { DayBookSummary } from '../../components/DayBookSummary';
-import { PaymentsReceived } from '../../components/PaymentsReceived';
-import { ErrorBoundary } from '../../components/ErrorBoundary';
-import { CashInHandSummary } from '../../components/CashInHandSummary';
-import { BulkPaymentsUpload } from '../../components/BulkPaymentsUpload';
+import { DateSelector } from '@/components/DateSelector';
+import { BankReconciliation } from '@/components/BankReconciliation';
+import { DayBookSummary } from '@/components/DayBookSummary';
+import { PaymentsReceived } from '@/components/PaymentsReceived';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { CashInHandSummary } from '@/components/CashInHandSummary';
 
-import { DayBookRecord, DailyRecord, Account, BankReconciliationEntry, PaymentReceived } from '../../types/daybook';
-import { getRecord, getPreviousRecord, getAllAccounts, getDailyRecord, saveDailyRecord, addPaymentReceived, updatePaymentReceived, deletePaymentReceived } from '../../utils/database';
-import { useAuth } from '../../context/AuthContext';
-import { useData } from '../../context/DataContext';
-import { useNotification } from '../../context/NotificationContext';
+import { DayBookRecord, DailyRecord, Account, BankReconciliationEntry, PaymentReceived } from '@/types/daybook';
+import { getRecord, getPreviousRecord, getAllAccounts, getDailyRecord, saveDailyRecord, addPaymentReceived, updatePaymentReceived, deletePaymentReceived } from '@/utils/database';
+import { useAuth } from '@/context/AuthContext';
+import { useData } from '@/context/DataContext';
+import { useNotification } from '@/context/NotificationContext';
 
 const createNewDailyRecord = (date: string, userId: string, prevDayBook: DayBookRecord | null): DailyRecord => {
   const prevCashDepositTotal = prevDayBook?.payments.cashDeposits?.reduce((sum, entry) => sum + entry.amount, 0) || 0;
@@ -25,6 +24,7 @@ const createNewDailyRecord = (date: string, userId: string, prevDayBook: DayBook
     atmSale: prevDayBook?.payments.atmSale || 0,
     phonePeSale: prevDayBook?.payments.phonePeSale || 0,
     paytmSale: prevDayBook?.payments.paytmSale || 0,
+    directPnbTransfer: prevDayBook?.payments.directPnbTransfer || 0, // New field
     cashDeposit: prevCashDepositTotal,
   };
 
@@ -32,6 +32,7 @@ const createNewDailyRecord = (date: string, userId: string, prevDayBook: DayBook
     { type: 'atmSale', expected: prevPayments.atmSale, actual: 0, matched: false },
     { type: 'phonePeSale', expected: prevPayments.phonePeSale, actual: 0, matched: false },
     { type: 'paytmSale', expected: prevPayments.paytmSale, actual: 0, matched: false },
+    { type: 'directPnbTransfer', expected: prevPayments.directPnbTransfer, actual: 0, matched: false }, // New field
     { type: 'cashDeposit', expected: prevPayments.cashDeposit, actual: 0, matched: false },
   ];
 
@@ -80,6 +81,7 @@ export default function DailyRecordScreen() {
             atmSale: prevDbRecord?.payments.atmSale || 0,
             phonePeSale: prevDbRecord?.payments.phonePeSale || 0,
             paytmSale: prevDbRecord?.payments.paytmSale || 0,
+            directPnbTransfer: prevDbRecord?.payments.directPnbTransfer || 0, // New field
             cashDeposit: prevCashDepositTotal,
         };
         const updatedReconciliation = existingDailyRecord.bankReconciliation.map(entry => ({
@@ -207,8 +209,6 @@ export default function DailyRecordScreen() {
                 onDeletePayment={handleDeletePayment}
                 date={dailyRecord.date}
               />
-              
-              <BulkPaymentsUpload date={dailyRecord.date} />
 
               <CashInHandSummary 
                 dayBookRecord={dayBookRecord}

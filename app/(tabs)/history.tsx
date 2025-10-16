@@ -61,6 +61,7 @@ export default function HistoryScreen() {
                 atmSale: prevDayBook?.payments.atmSale || 0,
                 phonePeSale: prevDayBook?.payments.phonePeSale || 0,
                 paytmSale: prevDayBook?.payments.paytmSale || 0,
+                directPnbTransfer: prevDayBook?.payments.directPnbTransfer || 0, // New field
                 cashDeposit: prevCashDepositTotal,
             };
 
@@ -159,6 +160,17 @@ export default function HistoryScreen() {
     const totals = dayBook ? calculateTotals(dayBook, null) : null;
     const totalPaymentsReceived = dailyRecord?.paymentsReceived?.reduce((sum, p) => sum + p.amount, 0) || 0;
 
+    const getReconLabel = (type: string) => {
+        switch(type) {
+            case 'atmSale': return 'ATM';
+            case 'phonePeSale': return 'PhonePe';
+            case 'paytmSale': return 'Paytm';
+            case 'directPnbTransfer': return 'PNB';
+            case 'cashDeposit': return 'Deposit';
+            default: return 'Unknown';
+        }
+    }
+
     return (
       <Card key={date} style={styles.recordCard}>
         <View style={styles.recordHeader}>
@@ -175,13 +187,13 @@ export default function HistoryScreen() {
           </TouchableOpacity>
         </View>
         
-        {dailyRecord?.bankReconciliation && dailyRecord.bankReconciliation.some(r => r.expected > 0) && (
+        {dailyRecord?.bankReconciliation && dailyRecord.bankReconciliation.some(r => r.expected > 0 || r.actual > 0) && (
           <View style={styles.reconStatusSection}>
             <Text style={styles.reconTitle}>Bank Reconciliation Status</Text>
             <View style={styles.reconGrid}>
-              {dailyRecord.bankReconciliation.filter(r => r.expected > 0).map(r => (
+              {dailyRecord.bankReconciliation.filter(r => r.expected > 0 || r.actual > 0).map(r => (
                 <View key={r.type} style={styles.reconItem}>
-                  <Text style={styles.reconLabel}>{r.type === 'atmSale' ? 'ATM' : r.type === 'phonePeSale' ? 'PhonePe' : r.type === 'paytmSale' ? 'Paytm' : 'Cash Deposit'}</Text>
+                  <Text style={styles.reconLabel}>{getReconLabel(r.type)}</Text>
                   {r.matched ? <CheckCircle size={14} color="#059669" /> : <View style={styles.unmatchedDot} />}
                 </View>
               ))}

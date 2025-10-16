@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Modal } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
@@ -8,25 +8,24 @@ import { Card } from '../../components/Card';
 import { NumberInput } from '../../components/NumberInput';
 import { DateSelector } from '../../components/DateSelector';
 import { DayRangePicker } from '../../components/DayRangePicker';
-import { getDayBookRecordsForDateRange, getStockOrdersForDateRange, addStockOrder, deleteStockOrder } from '../../utils/database';
+import { ReportMachineReadings } from '../../components/ReportMachineReadings';
+import { getStockOrdersForDateRange, addStockOrder, deleteStockOrder, getDayBookRecordsForDateRange } from '../../utils/database';
 import { useNotification } from '../../context/NotificationContext';
 import { useData } from '../../context/DataContext';
 import { formatLitres } from '../../utils/formatters';
 import { StockOrder } from '../../types/daybook';
 
 interface StockData {
-  opening: number;
+  totalSold: number;
+  testingFuel: number;
+  netSold: number;
   ordered: number;
-  sold: number;
-  bookClosing: number;
-  actualClosing: number;
   diff: number;
 }
 
 export default function StockReportScreen() {
   const { showNotification } = useNotification();
   const { dataVersion } = useData();
-  // DEFINITIVE FIX: Default date range to the current month.
   const [dateRange, setDateRange] = useState({ start: startOfMonth(new Date()), end: endOfMonth(new Date()) });
   const [isLoading, setIsLoading] = useState(false);
   
@@ -34,10 +33,8 @@ export default function StockReportScreen() {
   const [petrolStock, setPetrolStock] = useState<StockData | null>(null);
   const [dieselStock, setDieselStock] = useState<StockData | null>(null);
   
-  const [physicalOpeningPetrol, setPhysicalOpeningPetrol] = useState(0);
-  const [physicalClosingPetrol, setPhysicalClosingPetrol] = useState(0);
-  const [physicalOpeningDiesel, setPhysicalOpeningDiesel] = useState(0);
-  const [physicalClosingDiesel, setPhysicalClosingDiesel] = useState(0);
+  const [openingReadings, setOpeningReadings] = useState({ petrol: Array(4).fill(0), diesel: Array(4).fill(0) });
+  const [closingReadings, setClosingReadings] = useState({ petrol: Array(4).fill(0), diesel: Array(4).fill(0) });
 
   const [isFormVisible, setIsFormVisible] = useState(false);
   const [newOrder, setNewOrder] = useState({ date: new Date(), fuelType: 'diesel' as 'petrol' | 'diesel', litres: 0 });
@@ -48,26 +45,30 @@ export default function StockReportScreen() {
       const startDate = format(dateRange.start, 'yyyy-MM-dd');
       const endDate = format(dateRange.end, 'yyyy-MM-dd');
 
-      const [dayBooks, fetchedStockOrders] = await Promise.all([
-        getDayBookRecordsForDateRange(startDate, endDate),
+      const [fetchedStockOrders, dayBookRecords] = await Promise.all([
         getStockOrdersForDateRange(startDate, endDate),
+        getDayBookRecordsForDateRange(startDate, endDate)
       ]);
+      
       setStockOrders(fetchedStockOrders);
 
       const calculateStock = (fuelType: 'petrol' | 'diesel'): StockData => {
-        const opening = fuelType === 'petrol' ? physicalOpeningPetrol : physicalOpeningDiesel;
-        const actualClosing = fuelType === 'petrol' ? physicalClosingPetrol : physicalClosingDiesel;
+        const opening = openingReadings[fuelType].reduce((sum, r) => sum + r, 0);
+        const closing = closingReadings[fuelType].reduce((sum, r) => sum + r, 0);
+        const totalSold = closing > opening ? closing - opening : 0;
         
-        const sold = dayBooks.reduce((sum, r) => {
-            const litres = r.machines[fuelType].reduce((s, m) => s + Math.max(0, (m.closingReading || 0) - (m.openingReading || 0)), 0);
-            return sum + litres;
+        const testingFuel = dayBookRecords.reduce((sum, record) => {
+            const testLitres = fuelType === 'petrol' 
+                ? record.expenses?.gasTesting?.petrolTestLitres 
+                : record.expenses?.gasTesting?.dieselTestLitres;
+            return sum + (testLitres || 0);
         }, 0);
 
+        const netSold = totalSold - testingFuel;
         const ordered = fetchedStockOrders.filter(o => o.fuel_type === fuelType).reduce((sum, o) => sum + o.litres, 0);
+        const diff = ordered - netSold;
         
-        const bookClosing = opening + ordered - sold;
-        const diff = actualClosing - bookClosing;
-        return { opening, ordered, sold, bookClosing, actualClosing, diff };
+        return { totalSold, testingFuel, netSold, ordered, diff };
       };
 
       setPetrolStock(calculateStock('petrol'));
@@ -78,11 +79,25 @@ export default function StockReportScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [dateRange, showNotification, physicalOpeningPetrol, physicalClosingPetrol, physicalOpeningDiesel, physicalClosingDiesel]);
+  }, [dateRange, showNotification, openingReadings, closingReadings]);
 
   useEffect(() => {
     loadReportData();
   }, [loadReportData, dataVersion]);
+
+  const handleUpdateReading = (
+    type: 'opening' | 'closing',
+    fuelType: 'petrol' | 'diesel',
+    index: number,
+    value: number
+  ) => {
+    const setter = type === 'opening' ? setOpeningReadings : setClosingReadings;
+    setter(prev => {
+        const newReadings = [...prev[fuelType]];
+        newReadings[index] = value;
+        return { ...prev, [fuelType]: newReadings };
+    });
+  };
 
   const handleAddOrder = async () => {
     if (newOrder.litres <= 0) {
@@ -112,17 +127,32 @@ export default function StockReportScreen() {
   
   const renderStockCard = (title: string, data: StockData | null, color: string) => {
     if (!data) return null;
+
+    const isShortage = data.diff < 0;
+    const isSurplus = data.diff > 0;
+    
+    let diffLabel = 'Shortage / Surplus';
+    let diffColor = '#1f2937'; // Default color
+    if (isShortage) {
+        diffLabel = 'Shortage';
+        diffColor = '#dc2626'; // Red
+    } else if (isSurplus) {
+        diffLabel = 'Surplus';
+        diffColor = '#059669'; // Green
+    }
+
+    const diffValue = Math.abs(data.diff);
+
     return (
       <Card style={{ borderColor: color, borderWidth: 1, marginBottom: 16 }}>
         <Text style={[styles.stockTitle, { color }]}>{title}</Text>
-        <View style={styles.row}><Text style={styles.label}>Opening Stock</Text><Text style={styles.value}>{formatLitres(data.opening)}</Text></View>
-        <View style={styles.row}><Text style={styles.label}>+ Fuel Ordered</Text><Text style={styles.value}>{formatLitres(data.ordered)}</Text></View>
-        <View style={styles.row}><Text style={styles.label}>- Fuel Sold</Text><Text style={styles.value}>- {formatLitres(data.sold)}</Text></View>
-        <View style={[styles.row, styles.subtotal]}><Text style={styles.label}>= Book Closing Stock</Text><Text style={styles.value}>{formatLitres(data.bookClosing)}</Text></View>
-        <View style={styles.row}><Text style={styles.label}>Actual Closing Stock</Text><Text style={styles.value}>{formatLitres(data.actualClosing)}</Text></View>
+        <View style={styles.row}><Text style={styles.label}>Total Sold (from Machines)</Text><Text style={styles.value}>{formatLitres(data.totalSold)}</Text></View>
+        <View style={styles.row}><Text style={styles.label}>Less: Fuel for Testing</Text><Text style={styles.value}>- {formatLitres(data.testingFuel)}</Text></View>
+        <View style={[styles.row, styles.subTotal]}><Text style={styles.subTotalLabel}>= Net Fuel Sold</Text><Text style={styles.subTotalValue}>{formatLitres(data.netSold)}</Text></View>
+        <View style={styles.row}><Text style={styles.label}>Total Fuel Ordered</Text><Text style={styles.value}>{formatLitres(data.ordered)}</Text></View>
         <View style={[styles.row, styles.total]}>
-            <Text style={[styles.totalLabel, data.diff < 0 && styles.negative]}>Shortage / Surplus</Text>
-            <Text style={[styles.totalValue, data.diff < 0 && styles.negative]}>{formatLitres(data.diff)}</Text>
+            <Text style={[styles.totalLabel, { color: diffColor }]}>{diffLabel}</Text>
+            <Text style={[styles.totalValue, { color: diffColor }]}>{formatLitres(diffValue)}</Text>
         </View>
       </Card>
     );
@@ -137,17 +167,19 @@ export default function StockReportScreen() {
             <DayRangePicker range={dateRange} onRangeChange={setDateRange} />
           </Card>
 
-          <Card>
-            <Text style={styles.title}>Physical Stock (in Litres)</Text>
-            <View style={styles.physicalStockRow}>
-                <View style={styles.inputGroup}><Text style={styles.inputLabel}>Opening Petrol</Text><NumberInput value={physicalOpeningPetrol} onChangeValue={setPhysicalOpeningPetrol} /></View>
-                <View style={styles.inputGroup}><Text style={styles.inputLabel}>Closing Petrol</Text><NumberInput value={physicalClosingPetrol} onChangeValue={setPhysicalClosingPetrol} /></View>
-            </View>
-            <View style={styles.physicalStockRow}>
-                <View style={styles.inputGroup}><Text style={styles.inputLabel}>Opening Diesel</Text><NumberInput value={physicalOpeningDiesel} onChangeValue={setPhysicalOpeningDiesel} /></View>
-                <View style={styles.inputGroup}><Text style={styles.inputLabel}>Closing Diesel</Text><NumberInput value={physicalClosingDiesel} onChangeValue={setPhysicalClosingDiesel} /></View>
-            </View>
-          </Card>
+          <ReportMachineReadings
+            title="Opening Readings (Start of Period)"
+            petrolReadings={openingReadings.petrol}
+            dieselReadings={openingReadings.diesel}
+            onUpdate={(fuel, idx, val) => handleUpdateReading('opening', fuel, idx, val)}
+          />
+
+          <ReportMachineReadings
+            title="Closing Readings (End of Period)"
+            petrolReadings={closingReadings.petrol}
+            dieselReadings={closingReadings.diesel}
+            onUpdate={(fuel, idx, val) => handleUpdateReading('closing', fuel, idx, val)}
+          />
           
           <Card>
             <View style={styles.orderHeader}>
@@ -171,8 +203,8 @@ export default function StockReportScreen() {
             <ActivityIndicator size="large" color="#2563eb" style={{ marginTop: 40 }} />
           ) : (
             <>
-              {renderStockCard('Petrol Stock', petrolStock, '#7c3aed')}
-              {renderStockCard('Diesel Stock', dieselStock, '#059669')}
+              {renderStockCard('Petrol Stock Reconciliation', petrolStock, '#7c3aed')}
+              {renderStockCard('Diesel Stock Reconciliation', dieselStock, '#059669')}
             </>
           )}
         </ScrollView>
@@ -209,11 +241,12 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
   label: { fontSize: 14, color: '#374151' },
   value: { fontSize: 14, fontWeight: '500' },
-  subtotal: { borderTopWidth: 1, paddingTop: 8, marginTop: 4, borderColor: '#e5e7eb' },
+  subTotal: { borderTopWidth: 1, paddingTop: 6, marginTop: 6, borderColor: '#d1d5db' },
+  subTotalLabel: { fontSize: 14, fontWeight: '600' },
+  subTotalValue: { fontSize: 14, fontWeight: '600' },
   total: { borderTopWidth: 2, paddingTop: 10, marginTop: 6, borderColor: '#9ca3af' },
   totalLabel: { fontSize: 16, fontWeight: '700' },
   totalValue: { fontSize: 16, fontWeight: '700' },
-  negative: { color: '#dc2626' },
   orderHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   addButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#2563eb', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, gap: 4 },
   addButtonText: { color: '#fff', fontWeight: '500', fontSize: 12 },
@@ -235,5 +268,4 @@ const styles = StyleSheet.create({
   cancelButtonText: { fontWeight: '600', color: '#374151' },
   saveButton: { flex: 1, padding: 12, borderRadius: 8, backgroundColor: '#2563eb', alignItems: 'center' },
   saveButtonText: { fontWeight: '600', color: '#fff' },
-  physicalStockRow: { flexDirection: 'row', gap: 12, marginBottom: 8 },
 });

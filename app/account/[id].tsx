@@ -19,7 +19,7 @@ export default function AccountLedgerScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const navigation = useNavigation();
   const { showNotification } = useNotification();
-  const { dataVersion } = useData();
+  const { dataVersion, refreshData } = useData();
 
   const [account, setAccount] = useState<Account | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -55,20 +55,35 @@ export default function AccountLedgerScreen() {
   const processedTransactions = useMemo(() => {
     const sortedTxs = [...transactions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
+    let availableCredit = sortedTxs
+      .filter(tx => tx.type === 'credit')
+      .reduce((sum, tx) => sum + tx.amount, 0);
+
+    const settledTxs = sortedTxs.map(tx => {
+      if (tx.type === 'debit' && availableCredit > 0) {
+        const amountToSettle = Math.min(availableCredit, tx.amount);
+        availableCredit -= amountToSettle;
+
+        if (amountToSettle >= tx.amount) {
+          return { ...tx, settlementStatus: 'fully-settled' as const, settledAmount: tx.amount };
+        } else {
+          return { ...tx, settlementStatus: 'partially-settled' as const, settledAmount: amountToSettle };
+        }
+      }
+      return { ...tx, settlementStatus: 'unsettled' as const, settledAmount: 0 };
+    });
+
     let runningBalance = 0;
-    return sortedTxs.map(tx => {
+    const finalTxs = settledTxs.map(tx => {
         runningBalance += tx.type === 'credit' ? tx.amount : -tx.amount;
         return { ...tx, runningBalance };
     });
-  }, [transactions]);
 
-
-  const displayTransactions = useMemo(() => {
     if (sortOrder === 'desc') {
-      return [...processedTransactions].reverse();
+        return finalTxs.reverse();
     }
-    return processedTransactions;
-  }, [processedTransactions, sortOrder]);
+    return finalTxs;
+  }, [transactions, sortOrder]);
 
 
   const handleDelete = (tx: Transaction) => {
@@ -118,7 +133,22 @@ export default function AccountLedgerScreen() {
       <View style={styles.row}>
         <View style={styles.dateAndDesc}>
             <Text style={styles.dateCell}>{format(adjustedDate, 'dd/MM/yy')}</Text>
-            <Text style={styles.descriptionCell}>{item.description}</Text>
+            <View style={styles.descriptionContainer}>
+                <Text style={styles.descriptionCell}>{item.description}</Text>
+                {item.settlementStatus === 'fully-settled' && (
+                    <View style={[styles.badge, styles.settledBadge]}>
+                        <CheckCircle size={12} color="#059669" />
+                        <Text style={styles.badgeText}>Settled</Text>
+                    </View>
+                )}
+                {item.settlementStatus === 'partially-settled' && (
+                    <View style={[styles.badge, styles.partialBadge]}>
+                        <Text style={styles.badgeText}>
+                            Partial (rem: {formatIndianCurrency(item.amount - (item.settledAmount || 0))})
+                        </Text>
+                    </View>
+                )}
+            </View>
         </View>
         <View style={styles.amounts}>
             <Text style={[styles.amountCell, isCredit ? styles.creditText : styles.debitText]}>
@@ -152,7 +182,7 @@ export default function AccountLedgerScreen() {
       <SafeAreaView style={styles.container}>
         {renderHeader()}
         <FlatList
-          data={displayTransactions}
+          data={processedTransactions}
           renderItem={renderTransactionItem}
           keyExtractor={(item) => item.id}
           ListHeaderComponent={
@@ -220,6 +250,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#e5e7eb', alignItems: 'center' },
   dateAndDesc: { flex: 2, gap: 2 },
   dateCell: { fontSize: 12, color: '#6b7280' },
+  descriptionContainer: { gap: 4 },
   descriptionCell: { fontSize: 14, color: '#374151', fontWeight: '500' },
   amounts: { flex: 3, flexDirection: 'row', justifyContent: 'space-between' },
   amountCell: { width: '33%', textAlign: 'right' },
@@ -233,4 +264,25 @@ const styles = StyleSheet.create({
   quickActions: { flexDirection: 'row', padding: 16, gap: 12, borderTopWidth: 1, borderTopColor: '#e5e7eb', backgroundColor: '#fff' },
   actionButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 14, borderRadius: 8, gap: 8, backgroundColor: '#f9fafb', borderWidth: 1, borderColor: '#e5e7eb' },
   actionButtonText: { fontSize: 14, fontWeight: '600' },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  settledBadge: {
+    backgroundColor: '#ecfdf5',
+  },
+  partialBadge: {
+    backgroundColor: '#fffbeb',
+  },
+  badgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#a16207',
+  },
 });

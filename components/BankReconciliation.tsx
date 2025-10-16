@@ -78,7 +78,6 @@ export function BankReconciliation({ bankReconciliation, onUpdate }: BankReconci
         <View style={styles.amountContainer}>
           <Text style={styles.amountLabel}>Actual</Text>
           <View style={styles.actualAmountRow}>
-            {/* DEFINITIVE FIX: Make the input read-only if a value exists */}
             {entry.actual > 0 ? (
               <Text style={[styles.actualInput, styles.lockedValue]}>
                 {formatIndianCurrency(entry.actual)}
@@ -140,6 +139,7 @@ export function BankReconciliation({ bankReconciliation, onUpdate }: BankReconci
             {renderEntry('atmSale', 'ATM Sale')}
             {renderEntry('phonePeSale', 'PhonePe Sale')}
             {renderEntry('paytmSale', 'Paytm Sale')}
+            {renderEntry('directPnbTransfer', 'Direct PNB Transfer')}
             {renderEntry('cashDeposit', 'Cash Deposit')}
           </View>
         ) : (
@@ -196,7 +196,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     fontWeight: '600',
     color: '#374151',
-    paddingVertical: 9, // Adjust for border removal
+    paddingVertical: 9,
   },
   deleteButton: {
     padding: 4,

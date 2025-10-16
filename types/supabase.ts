@@ -170,6 +170,7 @@ export type Database = {
           amount: number
           description: string | null
           receipt_number: string | null
+          payment_method: string | null // New field
           created_at: string
         }
         Insert: {
@@ -180,6 +181,7 @@ export type Database = {
           amount: number
           description?: string | null
           receipt_number?: string | null
+          payment_method?: string | null // New field
           created_at?: string
         }
         Update: {
@@ -190,6 +192,7 @@ export type Database = {
           amount?: number
           description?: string | null
           receipt_number?: string | null
+          payment_method?: string | null // New field
           created_at?: string
         }
         Relationships: [
@@ -301,11 +304,17 @@ export type Database = {
           percentage_change: number
         }[]
       }
-      get_aged_outstanding_credit: {
+      get_aged_debtors_report: {
         Args: Record<PropertyKey, never>
         Returns: {
-          month_start: string
+          account_id: string
+          account_name: string
+          account_type: "factory" | "transporter"
           total_outstanding: number
+          days_0_30: number
+          days_31_60: number
+          days_61_90: number
+          days_over_90: number
         }[]
       }
     }

@@ -21,6 +21,7 @@ export function LedgerEntryForm({ account, entryType, onClose, onSave }: LedgerE
   const [amount, setAmount] = useState(0);
   const [description, setDescription] = useState('');
   const [receiptNumber, setReceiptNumber] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState(''); // New state
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -29,6 +30,7 @@ export function LedgerEntryForm({ account, entryType, onClose, onSave }: LedgerE
     setAmount(0);
     setDescription('');
     setReceiptNumber('');
+    setPaymentMethod(''); // Reset new state
   }, [entryType, account]);
 
   const handleSave = async () => {
@@ -47,6 +49,7 @@ export function LedgerEntryForm({ account, entryType, onClose, onSave }: LedgerE
           amount,
           description,
           receiptNumber,
+          paymentMethod, // Include new field
         };
         await addPaymentReceived(payment);
         showNotification('Payment recorded successfully!', 'success');
@@ -92,6 +95,12 @@ export function LedgerEntryForm({ account, entryType, onClose, onSave }: LedgerE
             <Text style={styles.label}>Amount (₹)</Text>
             <NumberInput value={amount} onChangeValue={setAmount} placeholder="0.00" />
           </View>
+          {entryType === 'payment' && (
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Payment Method (Optional)</Text>
+              <TextInput style={styles.input} value={paymentMethod} onChangeText={setPaymentMethod} placeholder="e.g., Cash, Bank Transfer" />
+            </View>
+          )}
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Receipt Number (Optional)</Text>
             <TextInput style={styles.input} value={receiptNumber} onChangeText={setReceiptNumber} placeholder="e.g., 98765" />

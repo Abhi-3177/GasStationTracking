@@ -41,7 +41,6 @@ function parseDateString(dateInput: any): Date | null {
   return null;
 }
 
-
 export function TransactionFileUpload() {
   const { showNotification } = useNotification();
   const { refreshData } = useData();
@@ -110,6 +109,7 @@ export function TransactionFileUpload() {
       let successCount = 0;
       let duplicateCount = 0;
       const errors: Record<string, number[]> = {};
+      let failedRowCount = 0;
 
       for (let i = 0; i < jsonData.length; i++) {
         const row = jsonData[i];
@@ -122,24 +122,20 @@ export function TransactionFileUpload() {
         const date = parseDateString(dateRaw);
         const amount = amountRaw !== null ? parseFloat(String(amountRaw).replace(/,/g, '')) : NaN;
         
-        let isValidRow = true;
+        let primaryError: string | null = null;
         if (!date) {
-            if (!errors['Invalid date']) errors['Invalid date'] = [];
-            errors['Invalid date'].push(rowNum);
-            isValidRow = false;
-        }
-        if (isNaN(amount) || amount <= 0) {
-            if (!errors['Invalid amount']) errors['Invalid amount'] = [];
-            errors['Invalid amount'].push(rowNum);
-            isValidRow = false;
-        }
-        if (!transactionId) {
-            if (!errors['Missing Transaction ID']) errors['Missing Transaction ID'] = [];
-            errors['Missing Transaction ID'].push(rowNum);
-            isValidRow = false;
+            primaryError = 'Invalid date format';
+        } else if (isNaN(amount) || amount <= 0) {
+            primaryError = 'Invalid amount';
+        } else if (!transactionId) {
+            primaryError = 'Missing Transaction ID';
         }
 
-        if (isValidRow && date) {
+        if (primaryError) {
+            failedRowCount++;
+            if (!errors[primaryError]) errors[primaryError] = [];
+            errors[primaryError].push(rowNum);
+        } else if (date) {
           const payment = {
             date: format(date, 'yyyy-MM-dd'),
             accountId: paytmAccount.id,
@@ -152,11 +148,11 @@ export function TransactionFileUpload() {
             await addPaymentReceived(payment);
             successCount++;
           } catch(e: any) {
-            // Error code '23505' is for unique_violation in PostgreSQL
-            if (e.code === '23505') {
+            if (e.code === '23505') { // unique_violation
                 duplicateCount++;
             } else {
                 const reason = 'Database Save Error';
+                failedRowCount++;
                 if (!errors[reason]) errors[reason] = [];
                 errors[reason].push(rowNum);
             }
@@ -164,14 +160,9 @@ export function TransactionFileUpload() {
         }
       }
       
-      const errorCount = Object.values(errors).reduce((sum, rows) => sum + rows.length, 0);
-
-      if (successCount === 0 && errorCount > 0) {
+      if (successCount === 0 && failedRowCount > 0) {
         const errorSummary = Object.entries(errors)
-            .map(([reason, rowNumbers]) => {
-                const filteredRows = rowNumbers.filter(r => r > 0);
-                return `${reason} (error)${filteredRows.length > 0 ? ` - Row ${filteredRows.slice(0, 5).join(', ')}` : ''}`;
-            })
+            .map(([reason, rowNumbers]) => `${reason} - Row ${rowNumbers.slice(0, 10).join(', ')}${rowNumbers.length > 10 ? '...' : ''}`)
             .join('\n- ');
         throw new Error(`Processed ${jsonData.length} rows but found 0 valid entries. Errors found:\n- ${errorSummary}`);
       }
@@ -181,14 +172,11 @@ export function TransactionFileUpload() {
       if (duplicateCount > 0) {
         finalMessage += ` Skipped ${duplicateCount} duplicates.`;
       }
-      if (errorCount > 0) {
+      if (failedRowCount > 0) {
         const errorSummary = Object.entries(errors)
-            .map(([reason, rowNumbers]) => {
-                const filteredRows = rowNumbers.filter(r => r > 0);
-                return `${reason} (error)${filteredRows.length > 0 ? ` - Row ${filteredRows.slice(0, 5).join(', ')}` : ''}`;
-            })
+            .map(([reason, rowNumbers]) => `${reason} - Row ${rowNumbers.slice(0, 10).join(', ')}${rowNumbers.length > 10 ? '...' : ''}`)
             .join('\n- ');
-        finalMessage += `\nSkipped ${errorCount} rows with errors. First errors:\n- ${errorSummary}`;
+        finalMessage += `\nSkipped ${failedRowCount} rows with errors. Errors found:\n- ${errorSummary}`;
       }
       setMessage(finalMessage);
       refreshData();

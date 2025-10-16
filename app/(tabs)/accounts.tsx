@@ -8,9 +8,9 @@ import { differenceInDays, format } from 'date-fns';
 import { Card } from '../../components/Card';
 import { AccountForm } from '../../components/AccountForm';
 import { ConfirmModal } from '../../components/ConfirmModal';
-import { BulkAccountUpload } from '../../components/BulkAccountUpload'; // Import the new component
+import { BulkAccountUpload } from '../../components/BulkAccountUpload';
 import { Account } from '../../types/daybook';
-import { getAccountsForDisplay, deleteAccount } from '../../utils/database';
+import { getAccountsWithLastPayment, deleteAccount } from '../../utils/database';
 import { useNotification } from '../../context/NotificationContext';
 import { useData } from '../../context/DataContext';
 import { formatIndianCurrency } from '../../utils/formatters';
@@ -25,7 +25,7 @@ export default function AccountsScreen() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isFormVisible, setIsFormVisible] = useState(false);
-  const [isBulkUploadVisible, setIsBulkUploadVisible] = useState(false); // State for bulk upload modal
+  const [isBulkUploadVisible, setIsBulkUploadVisible] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
   const [activeTab, setActiveTab] = useState<ActiveTab>('factory');
@@ -33,7 +33,7 @@ export default function AccountsScreen() {
   const loadAccounts = useCallback(async () => {
     setIsLoading(true);
     try {
-      const fetchedAccounts = await getAccountsForDisplay();
+      const fetchedAccounts = await getAccountsWithLastPayment();
       setAccounts(fetchedAccounts);
     } catch (error: any) {
       showNotification(`Error loading accounts: ${error.message}`, 'error');

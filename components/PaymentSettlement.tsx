@@ -50,8 +50,8 @@ export function PaymentSettlement({ payments, totals, onUpdatePayments }: Paymen
           <NumberInput
             value={payments.atmSale}
             onChangeValue={(value) => onUpdatePayments({ ...payments, atmSale: value })}
-            placeholder="0.000"
-            precision={3}
+            placeholder="0.00"
+            precision={2}
           />
         </View>
         
@@ -60,8 +60,8 @@ export function PaymentSettlement({ payments, totals, onUpdatePayments }: Paymen
           <NumberInput
             value={payments.phonePeSale}
             onChangeValue={(value) => onUpdatePayments({ ...payments, phonePeSale: value })}
-            placeholder="0.000"
-            precision={3}
+            placeholder="0.00"
+            precision={2}
           />
         </View>
         
@@ -70,8 +70,18 @@ export function PaymentSettlement({ payments, totals, onUpdatePayments }: Paymen
           <NumberInput
             value={payments.paytmSale}
             onChangeValue={(value) => onUpdatePayments({ ...payments, paytmSale: value })}
-            placeholder="0.000"
-            precision={3}
+            placeholder="0.00"
+            precision={2}
+          />
+        </View>
+
+        <View style={styles.paymentInput}>
+          <Text style={styles.inputLabel}>Direct PNB Transfer</Text>
+          <NumberInput
+            value={payments.directPnbTransfer}
+            onChangeValue={(value) => onUpdatePayments({ ...payments, directPnbTransfer: value })}
+            placeholder="0.00"
+            precision={2}
           />
         </View>
       </View>
@@ -141,7 +151,7 @@ const styles = StyleSheet.create({
   },
   paymentInput: {
     flex: 1,
-    minWidth: '30%',
+    minWidth: '45%', // Ensure 2 items per row
   },
   inputLabel: {
     fontSize: 12,
