@@ -13,6 +13,13 @@ interface BankReconciliationProps {
   onUpdate: (updatedReconciliation: BankReconciliationEntry[]) => Promise<void>;
 }
 
+const RECONCILIATION_ORDER: { type: BankReconciliationEntry['type']; label: string }[] = [
+    { type: 'atmSale', label: 'ATM Sale' },
+    { type: 'phonePeSale', label: 'PhonePe Sale' },
+    { type: 'directPnbTransfer', label: 'Direct PNB Transfer' },
+    { type: 'ioclCardSale', label: 'IOCL Card Sale' },
+];
+
 export function BankReconciliation({ bankReconciliation, onUpdate }: BankReconciliationProps) {
   const { showNotification } = useNotification();
   const [isResetting, setIsResetting] = useState<string | null>(null);
@@ -123,7 +130,8 @@ export function BankReconciliation({ bankReconciliation, onUpdate }: BankReconci
     );
   };
 
-  const hasEntries = bankReconciliation.some(e => e.expected > 0 || e.actual > 0);
+  const relevantEntries = RECONCILIATION_ORDER.map(item => bankReconciliation.find(e => e.type === item.type)).filter(Boolean);
+  const hasEntries = relevantEntries.some(e => e.expected > 0 || e.actual > 0);
 
   return (
     <>
@@ -136,11 +144,7 @@ export function BankReconciliation({ bankReconciliation, onUpdate }: BankReconci
         
         {hasEntries ? (
           <View style={styles.entriesContainer}>
-            {renderEntry('atmSale', 'ATM Sale')}
-            {renderEntry('phonePeSale', 'PhonePe Sale')}
-            {renderEntry('paytmSale', 'Paytm Sale')}
-            {renderEntry('directPnbTransfer', 'Direct PNB Transfer')}
-            {renderEntry('cashDeposit', 'Cash Deposit')}
+            {RECONCILIATION_ORDER.map(item => renderEntry(item.type, item.label))}
           </View>
         ) : (
           <Text style={styles.noEntriesText}>No bank payments to reconcile from previous day.</Text>

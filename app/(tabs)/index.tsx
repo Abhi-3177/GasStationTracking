@@ -51,7 +51,7 @@ const createNewRecord = (dateKey: string, previousRecord: DayBookRecord | null):
   cashTransactions: [],
   deductions: { sviSales: [], sales0332: [], creditSales: [] },
   expenses: { gasCommissions: [], additionalExpenses: [], gasTesting: { petrolTestLitres: 10, dieselTestLitres: 20 } },
-  payments: { atmSale: 0, phonePeSale: 0, paytmSale: 0, directPnbTransfer: 0, cashDeposits: [] },
+  payments: { atmSale: 0, phonePeSale: 0, paytmSale: 0, directPnbTransfer: 0, ioclCardSale: 0, cashDeposits: [] },
 });
 
 const normalizeRecord = (loadedRecord: Partial<DayBookRecord>, defaultRecord: DayBookRecord): DayBookRecord => {
@@ -95,6 +95,7 @@ const normalizeRecord = (loadedRecord: Partial<DayBookRecord>, defaultRecord: Da
         phonePeSale: loadedRecord.payments?.phonePeSale ?? defaultRecord.payments.phonePeSale,
         paytmSale: loadedRecord.payments?.paytmSale ?? defaultRecord.payments.paytmSale,
         directPnbTransfer: loadedRecord.payments?.directPnbTransfer ?? defaultRecord.payments.directPnbTransfer,
+        ioclCardSale: loadedRecord.payments?.ioclCardSale ?? defaultRecord.payments.ioclCardSale,
         cashDeposits: loadedRecord.payments?.cashDeposits ?? [],
     },
   };

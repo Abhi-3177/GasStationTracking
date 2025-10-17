@@ -109,7 +109,7 @@ export function TransactionFileUpload() {
       let successCount = 0;
       let duplicateCount = 0;
       const errors: Record<string, number[]> = {};
-      let failedRowCount = 0;
+      const importedDates = new Set<string>();
 
       for (let i = 0; i < jsonData.length; i++) {
         const row = jsonData[i];
@@ -132,7 +132,6 @@ export function TransactionFileUpload() {
         }
 
         if (primaryError) {
-            failedRowCount++;
             if (!errors[primaryError]) errors[primaryError] = [];
             errors[primaryError].push(rowNum);
         } else if (date) {
@@ -142,17 +141,18 @@ export function TransactionFileUpload() {
             amount: amount,
             description: 'Paytm Transaction',
             receiptNumber: String(transactionId),
+            paymentMethod: 'Paytm',
           };
 
           try {
             await addPaymentReceived(payment);
             successCount++;
+            importedDates.add(payment.date);
           } catch(e: any) {
-            if (e.code === '23505') { // unique_violation
+            if (e.message?.includes('duplicate key')) {
                 duplicateCount++;
             } else {
-                const reason = 'Database Save Error';
-                failedRowCount++;
+                const reason = 'Failed to Save (Network/DB Issue)';
                 if (!errors[reason]) errors[reason] = [];
                 errors[reason].push(rowNum);
             }
@@ -160,23 +160,46 @@ export function TransactionFileUpload() {
         }
       }
       
+      const failedRowCount = Object.values(errors).reduce((sum, rows) => sum + rows.length, 0);
+
       if (successCount === 0 && failedRowCount > 0) {
         const errorSummary = Object.entries(errors)
-            .map(([reason, rowNumbers]) => `${reason} - Row ${rowNumbers.slice(0, 10).join(', ')}${rowNumbers.length > 10 ? '...' : ''}`)
-            .join('\n- ');
-        throw new Error(`Processed ${jsonData.length} rows but found 0 valid entries. Errors found:\n- ${errorSummary}`);
+            .map(([reason, rowNumbers]) => `- ${reason} (${rowNumbers.length} errors): Rows ${rowNumbers.slice(0, 10).join(', ')}${rowNumbers.length > 10 ? '...' : ''}`)
+            .join('\n');
+        throw new Error(`Processed ${jsonData.length} rows but found 0 valid entries. Errors found:\n${errorSummary}`);
       }
 
       setStatus('success');
-      let finalMessage = `Success! Imported ${successCount} new transactions.`;
+      
+      let dateInfo = '';
+      if (importedDates.size > 0) {
+          const dates = Array.from(importedDates).map(d => new Date(d));
+          dates.sort((a, b) => a.getTime() - b.getTime());
+          
+          const firstDate = dates[0];
+          const lastDate = dates[dates.length - 1];
+          
+          const tzOffset1 = firstDate.getTimezoneOffset() * 60000;
+          const adjustedFirstDate = new Date(firstDate.getTime() + tzOffset1);
+
+          if (dates.length === 1) {
+              dateInfo = ` for ${format(adjustedFirstDate, 'dd-MMM-yyyy')}`;
+          } else {
+              const tzOffset2 = lastDate.getTimezoneOffset() * 60000;
+              const adjustedLastDate = new Date(lastDate.getTime() + tzOffset2);
+              dateInfo = ` for dates between ${format(adjustedFirstDate, 'dd-MMM-yyyy')} and ${format(adjustedLastDate, 'dd-MMM-yyyy')}`;
+          }
+      }
+
+      let finalMessage = `Success! Imported ${successCount} new transactions${dateInfo}.`;
       if (duplicateCount > 0) {
         finalMessage += ` Skipped ${duplicateCount} duplicates.`;
       }
       if (failedRowCount > 0) {
         const errorSummary = Object.entries(errors)
-            .map(([reason, rowNumbers]) => `${reason} - Row ${rowNumbers.slice(0, 10).join(', ')}${rowNumbers.length > 10 ? '...' : ''}`)
-            .join('\n- ');
-        finalMessage += `\nSkipped ${failedRowCount} rows with errors. Errors found:\n- ${errorSummary}`;
+            .map(([reason, rowNumbers]) => `- ${reason} (${rowNumbers.length} errors): Rows ${rowNumbers.slice(0, 10).join(', ')}${rowNumbers.length > 10 ? '...' : ''}`)
+            .join('\n');
+        finalMessage += `\nSkipped ${failedRowCount} rows with errors. Errors found:\n${errorSummary}`;
       }
       setMessage(finalMessage);
       refreshData();

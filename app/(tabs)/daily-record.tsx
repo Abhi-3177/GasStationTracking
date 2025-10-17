@@ -24,7 +24,8 @@ const createNewDailyRecord = (date: string, userId: string, prevDayBook: DayBook
     atmSale: prevDayBook?.payments.atmSale || 0,
     phonePeSale: prevDayBook?.payments.phonePeSale || 0,
     paytmSale: prevDayBook?.payments.paytmSale || 0,
-    directPnbTransfer: prevDayBook?.payments.directPnbTransfer || 0, // New field
+    directPnbTransfer: prevDayBook?.payments.directPnbTransfer || 0,
+    ioclCardSale: prevDayBook?.payments.ioclCardSale || 0,
     cashDeposit: prevCashDepositTotal,
   };
 
@@ -32,7 +33,8 @@ const createNewDailyRecord = (date: string, userId: string, prevDayBook: DayBook
     { type: 'atmSale', expected: prevPayments.atmSale, actual: 0, matched: false },
     { type: 'phonePeSale', expected: prevPayments.phonePeSale, actual: 0, matched: false },
     { type: 'paytmSale', expected: prevPayments.paytmSale, actual: 0, matched: false },
-    { type: 'directPnbTransfer', expected: prevPayments.directPnbTransfer, actual: 0, matched: false }, // New field
+    { type: 'directPnbTransfer', expected: prevPayments.directPnbTransfer, actual: 0, matched: false },
+    { type: 'ioclCardSale', expected: prevPayments.ioclCardSale, actual: 0, matched: false },
     { type: 'cashDeposit', expected: prevPayments.cashDeposit, actual: 0, matched: false },
   ];
 
@@ -74,23 +76,19 @@ export default function DailyRecordScreen() {
       setDayBookRecord(dbRecord);
       setPreviousDayBookRecord(prevDbRecord);
       setAccounts(allAccounts);
+      
+      const newRecordTemplate = createNewDailyRecord(dateKey, user.id, prevDbRecord);
 
       if (existingDailyRecord) {
-        const prevCashDepositTotal = prevDbRecord?.payments.cashDeposits?.reduce((sum, entry) => sum + entry.amount, 0) || 0;
-        const prevPayments = {
-            atmSale: prevDbRecord?.payments.atmSale || 0,
-            phonePeSale: prevDbRecord?.payments.phonePeSale || 0,
-            paytmSale: prevDbRecord?.payments.paytmSale || 0,
-            directPnbTransfer: prevDbRecord?.payments.directPnbTransfer || 0, // New field
-            cashDeposit: prevCashDepositTotal,
-        };
-        const updatedReconciliation = existingDailyRecord.bankReconciliation.map(entry => ({
-          ...entry,
-          expected: prevPayments[entry.type as keyof typeof prevPayments] || 0,
+        const actualsMap = new Map(existingDailyRecord.bankReconciliation.map(e => [e.type, e.actual]));
+        const mergedReconciliation = newRecordTemplate.bankReconciliation.map(entry => ({
+            ...entry,
+            actual: actualsMap.get(entry.type) || 0,
+            matched: Math.abs((actualsMap.get(entry.type) || 0) - entry.expected) <= 1,
         }));
-        setDailyRecord({ ...existingDailyRecord, bankReconciliation: updatedReconciliation });
+        setDailyRecord({ ...existingDailyRecord, bankReconciliation: mergedReconciliation });
       } else {
-        setDailyRecord(createNewDailyRecord(dateKey, user.id, prevDbRecord));
+        setDailyRecord(newRecordTemplate);
       }
 
     } catch (error: any) {
@@ -111,21 +109,10 @@ export default function DailyRecordScreen() {
     loadData();
   }, [dataVersion]);
 
-  const handleUpdateReconciliation = async (updatedReconciliation: BankReconciliationEntry[]) => {
+  const handleUpdateReconciliation = (updatedReconciliation: BankReconciliationEntry[]) => {
     if (!dailyRecord) return;
-    
-    const originalRecord = dailyRecord;
-    const updatedRecord = { ...dailyRecord, bankReconciliation: updatedReconciliation };
-    setDailyRecord(updatedRecord); // Optimistic update
-
-    try {
-        await saveDailyRecord(updatedRecord);
-        refreshData();
-    } catch (error: any) {
-        console.error('Error saving reconciliation update:', error);
-        showNotification('Failed to save the change. Please try again.', 'error');
-        setDailyRecord(originalRecord); // Revert on failure
-    }
+    // Only update the local state. Do not save to DB here.
+    setDailyRecord(prev => prev ? { ...prev, bankReconciliation: updatedReconciliation } : null);
   };
 
   const handleAddPayment = async (payment: Omit<PaymentReceived, 'id' | 'user_id' | 'created_at'>) => {

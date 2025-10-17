@@ -443,7 +443,7 @@ export async function getTransactionsForAccount(accountId: string): Promise<Tran
             return {
                 id: `pr:${pr.id}`,
                 date: pr.date,
-                description: pr.description || `Payment Received via ${pr.payment_method || 'Unknown'}`,
+                description: pr.description || `Payment Received`,
                 type: 'credit',
                 amount: pr.amount,
                 receiptNumber: isPaytm ? undefined : (pr.receipt_number || undefined),
@@ -730,6 +730,9 @@ export async function addPaymentReceived(payment: Omit<PaymentReceived, 'id' | '
         payment_method: payment.paymentMethod,
     });
     if (error) {
+      if (error.code === '23505') { // unique_violation
+        throw new Error('This Receipt Number or Transaction ID has already been used.');
+      }
       console.error('Error adding payment received:', error);
       throw error;
     }

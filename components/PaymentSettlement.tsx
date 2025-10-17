@@ -84,6 +84,16 @@ export function PaymentSettlement({ payments, totals, onUpdatePayments }: Paymen
             precision={2}
           />
         </View>
+        
+        <View style={styles.paymentInput}>
+          <Text style={styles.inputLabel}>IOCL Card Sale</Text>
+          <NumberInput
+            value={payments.ioclCardSale}
+            onChangeValue={(value) => onUpdatePayments({ ...payments, ioclCardSale: value })}
+            placeholder="0.00"
+            precision={2}
+          />
+        </View>
       </View>
 
       <View style={styles.depositsSection}>

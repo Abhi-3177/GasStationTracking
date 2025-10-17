@@ -46,7 +46,8 @@ export function calculateTotals(record: DayBookRecord, previousRecord: DayBookRe
     (record?.payments?.atmSale || 0) + 
     (record?.payments?.phonePeSale || 0) + 
     (record?.payments?.paytmSale || 0) + 
-    (record?.payments?.directPnbTransfer || 0) + // New field
+    (record?.payments?.directPnbTransfer || 0) +
+    (record?.payments?.ioclCardSale || 0) + // New field
     totalCashDeposits;
 
   const totalCashIn = (record?.cashTransactions || []).reduce((total, trans) => total + (trans?.type === 'in' ? (trans?.amount || 0) : 0), 0);

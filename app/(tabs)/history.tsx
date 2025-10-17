@@ -8,7 +8,7 @@ import { Calendar, ChevronDown, ChevronUp, BookOpen, ClipboardList, Trash2, Tren
 
 import { Card } from '../../components/Card';
 import { ConfirmModal } from '../../components/ConfirmModal';
-import { DayBookRecord, DailyRecord } from '../../types/daybook';
+import { DayBookRecord, DailyRecord, BankReconciliationEntry } from '../../types/daybook';
 import { getAllRecords, getAllDailyRecords, deleteRecordsForDate } from '../../utils/database';
 import { calculateTotals } from '../../utils/calculations';
 import { formatIndianCurrency } from '../../utils/formatters';
@@ -20,6 +20,13 @@ interface HistoryItem {
   dayBook: DayBookRecord | null;
   dailyRecord: DailyRecord | null;
 }
+
+const RECONCILIATION_TYPES_TO_SHOW: Array<BankReconciliationEntry['type']> = [
+    'atmSale',
+    'phonePeSale',
+    'directPnbTransfer',
+    'ioclCardSale',
+];
 
 export default function HistoryScreen() {
   const { user } = useAuth();
@@ -61,20 +68,29 @@ export default function HistoryScreen() {
                 atmSale: prevDayBook?.payments.atmSale || 0,
                 phonePeSale: prevDayBook?.payments.phonePeSale || 0,
                 paytmSale: prevDayBook?.payments.paytmSale || 0,
-                directPnbTransfer: prevDayBook?.payments.directPnbTransfer || 0, // New field
+                directPnbTransfer: prevDayBook?.payments.directPnbTransfer || 0,
+                ioclCardSale: prevDayBook?.payments.ioclCardSale || 0,
                 cashDeposit: prevCashDepositTotal,
             };
 
-            const updatedReconciliation = dailyRecord.bankReconciliation.map(entry => {
-                const newExpected = prevPayments[entry.type as keyof typeof prevPayments] || 0;
-                const isMatched = Math.abs(entry.actual - newExpected) <= 1;
-                return {
-                    ...entry,
-                    expected: newExpected,
-                    matched: isMatched,
-                };
+            const actualsMap = new Map(dailyRecord.bankReconciliation.map(e => [e.type, e.actual]));
+
+            const newReconciliationTemplate: BankReconciliationEntry[] = [
+                { type: 'atmSale', expected: prevPayments.atmSale, actual: 0, matched: false },
+                { type: 'phonePeSale', expected: prevPayments.phonePeSale, actual: 0, matched: false },
+                { type: 'directPnbTransfer', expected: prevPayments.directPnbTransfer, actual: 0, matched: false },
+                { type: 'ioclCardSale', expected: prevPayments.ioclCardSale, actual: 0, matched: false },
+                { type: 'cashDeposit', expected: prevPayments.cashDeposit, actual: 0, matched: false },
+                { type: 'paytmSale', expected: prevPayments.paytmSale, actual: 0, matched: false },
+            ];
+
+            const mergedReconciliation = newReconciliationTemplate.map(entry => {
+                const actual = actualsMap.get(entry.type) || 0;
+                const isMatched = Math.abs(actual - entry.expected) <= 1;
+                return { ...entry, actual, matched: isMatched };
             });
-            dailyRecord = { ...dailyRecord, bankReconciliation: updatedReconciliation };
+
+            dailyRecord = { ...dailyRecord, bankReconciliation: mergedReconciliation };
         }
         
         combinedData.push({
@@ -164,12 +180,14 @@ export default function HistoryScreen() {
         switch(type) {
             case 'atmSale': return 'ATM';
             case 'phonePeSale': return 'PhonePe';
-            case 'paytmSale': return 'Paytm';
             case 'directPnbTransfer': return 'PNB';
-            case 'cashDeposit': return 'Deposit';
+            case 'ioclCardSale': return 'IOCL';
             default: return 'Unknown';
         }
     }
+    
+    const relevantReconEntries = (dailyRecord?.bankReconciliation || [])
+        .filter(r => RECONCILIATION_TYPES_TO_SHOW.includes(r.type) && (r.expected > 0 || r.actual > 0));
 
     return (
       <Card key={date} style={styles.recordCard}>
@@ -187,11 +205,11 @@ export default function HistoryScreen() {
           </TouchableOpacity>
         </View>
         
-        {dailyRecord?.bankReconciliation && dailyRecord.bankReconciliation.some(r => r.expected > 0 || r.actual > 0) && (
+        {relevantReconEntries.length > 0 && (
           <View style={styles.reconStatusSection}>
             <Text style={styles.reconTitle}>Bank Reconciliation Status</Text>
             <View style={styles.reconGrid}>
-              {dailyRecord.bankReconciliation.filter(r => r.expected > 0 || r.actual > 0).map(r => (
+              {relevantReconEntries.map(r => (
                 <View key={r.type} style={styles.reconItem}>
                   <Text style={styles.reconLabel}>{getReconLabel(r.type)}</Text>
                   {r.matched ? <CheckCircle size={14} color="#059669" /> : <View style={styles.unmatchedDot} />}

@@ -21,7 +21,7 @@ const memoryStorage = {
 };
 
 // Check if we are in a server-side environment (e.g., during Expo Router's static export)
-const isServer = Platform.OS === 'web' && typeof window === 'undefined';
+const isServer = typeof window === 'undefined';
 
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {

@@ -106,6 +106,7 @@ export interface DayBookRecord {
     phonePeSale: number;
     paytmSale: number;
     directPnbTransfer: number;
+    ioclCardSale: number; // New field
     cashDeposits: CashDepositEntry[];
   };
 }
@@ -150,7 +151,7 @@ export interface Account {
 }
 
 export interface BankReconciliationEntry {
-  type: 'atmSale' | 'phonePeSale' | 'paytmSale' | 'cashDeposit' | 'directPnbTransfer';
+  type: 'atmSale' | 'phonePeSale' | 'paytmSale' | 'cashDeposit' | 'directPnbTransfer' | 'ioclCardSale';
   expected: number;
   actual: number;
   matched: boolean;
