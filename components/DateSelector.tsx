@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ViewStyle, Modal } from 'react-native';
-import { Calendar as LucideCalendar, X } from 'lucide-react-native';
+import { Calendar as LucideCalendar, X, ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { format } from 'date-fns';
 import { Calendar, DateData } from 'react-native-calendars';
 
@@ -8,9 +8,10 @@ interface DateSelectorProps {
   selectedDate: Date;
   onDateChange: (date: Date) => void;
   buttonStyle?: ViewStyle;
+  savedDates?: string[];
 }
 
-export function DateSelector({ selectedDate, onDateChange, buttonStyle }: DateSelectorProps) {
+export function DateSelector({ selectedDate, onDateChange, buttonStyle, savedDates }: DateSelectorProps) {
   const [showPicker, setShowPicker] = useState(false);
   // State to manage the currently displayed month in the calendar
   const [calendarMonth, setCalendarMonth] = useState(format(selectedDate, 'yyyy-MM-dd'));
@@ -29,6 +30,28 @@ export function DateSelector({ selectedDate, onDateChange, buttonStyle }: DateSe
     setShowPicker(true);
   };
 
+  const marks = useMemo(() => {
+    const mark: { [key: string]: any } = {};
+    if (savedDates) {
+      savedDates.forEach(date => {
+        mark[date] = { marked: true, dotColor: '#059669' };
+      });
+    }
+    const formattedSelectedDate = format(selectedDate, 'yyyy-MM-dd');
+    mark[formattedSelectedDate] = {
+      ...(mark[formattedSelectedDate] || {}),
+      selected: true,
+      selectedColor: '#2563eb',
+    };
+    return mark;
+  }, [savedDates, selectedDate]);
+
+  const isDateSaved = useMemo(() => {
+    if (!savedDates) return false;
+    const formattedSelectedDate = format(selectedDate, 'yyyy-MM-dd');
+    return savedDates.includes(formattedSelectedDate);
+  }, [savedDates, selectedDate]);
+
   return (
     <View style={styles.container}>
       <TouchableOpacity 
@@ -36,9 +59,12 @@ export function DateSelector({ selectedDate, onDateChange, buttonStyle }: DateSe
         onPress={openPicker}
       >
         <LucideCalendar size={20} color="#2563eb" />
-        <Text style={styles.dateText}>
-          {format(selectedDate, 'dd/MM/yyyy')}
-        </Text>
+        <View style={styles.dateTextContainer}>
+            <Text style={styles.dateText}>
+                {format(selectedDate, 'dd/MM/yyyy')}
+            </Text>
+            {isDateSaved && <View style={styles.savedDot} />}
+        </View>
       </TouchableOpacity>
       
       <Modal
@@ -60,9 +86,12 @@ export function DateSelector({ selectedDate, onDateChange, buttonStyle }: DateSe
               current={calendarMonth}
               onMonthChange={(month) => setCalendarMonth(month.dateString)}
               onDayPress={handleDayPress}
-              markedDates={{
-                [format(selectedDate, 'yyyy-MM-dd')]: { selected: true, selectedColor: '#2563eb' },
-              }}
+              markedDates={marks}
+              renderArrow={(direction) => 
+                direction === 'left' ? 
+                <ChevronLeft size={24} color="#2563eb" /> : 
+                <ChevronRight size={24} color="#2563eb" />
+              }
               theme={{
                 todayTextColor: '#2563eb',
                 arrowColor: '#2563eb',
@@ -96,11 +125,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#d1d5db',
   },
+  dateTextContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   dateText: {
     fontSize: 16,
     fontWeight: '500',
     color: '#1f2937',
-    flex: 1,
+  },
+  savedDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#059669',
   },
   modalContainer: {
     flex: 1,

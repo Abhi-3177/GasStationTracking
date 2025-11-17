@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { BarChart2, ChevronRight, FileWarning, FileText, Droplets } from 'lucide-react-native';
+import { BarChart2, ChevronRight, FileWarning, FileText, Droplets, Truck } from 'lucide-react-native';
 import { Card } from '../../components/Card';
 
 export default function ReportsScreen() {
@@ -36,6 +36,13 @@ export default function ReportsScreen() {
       path: '/reports/account-statement',
       icon: <FileText size={24} color="#059669" />,
       color: '#ecfdf5',
+    },
+    {
+      title: 'Vehicle 0332 Report',
+      description: 'Track diesel filled, sold, and remaining stock for vehicle 0332 over a period.',
+      path: '/reports/vehicle-0332-report',
+      icon: <Truck size={24} color="#ea580c" />,
+      color: '#fff7ed',
     },
   ];
 

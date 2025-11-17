@@ -4,11 +4,11 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { format, subDays } from 'date-fns';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Calendar as RNCalendar, DateData } from 'react-native-calendars';
-import { Calendar, ChevronDown, ChevronUp, BookOpen, ClipboardList, Trash2, TrendingUp, TrendingDown, Wallet, CreditCard, HandCoins, CheckCircle } from 'lucide-react-native';
+import { Calendar, ChevronDown, ChevronUp, BookOpen, ClipboardList, Trash2, TrendingUp, TrendingDown, Wallet, CreditCard, HandCoins, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react-native';
 
 import { Card } from '../../components/Card';
 import { ConfirmModal } from '../../components/ConfirmModal';
-import { DayBookRecord, DailyRecord, BankReconciliationEntry } from '../../types/daybook';
+import { DayBookRecord, DailyRecord, BankReconciliationEntry, CalculatedTotals } from '../../types/daybook';
 import { getAllRecords, getAllDailyRecords, deleteRecordsForDate } from '../../utils/database';
 import { calculateTotals } from '../../utils/calculations';
 import { formatIndianCurrency } from '../../utils/formatters';
@@ -19,6 +19,7 @@ interface HistoryItem {
   date: string;
   dayBook: DayBookRecord | null;
   dailyRecord: DailyRecord | null;
+  calculatedTotals?: CalculatedTotals | null;
 }
 
 const RECONCILIATION_TYPES_TO_SHOW: Array<BankReconciliationEntry['type']> = [
@@ -53,13 +54,13 @@ export default function HistoryScreen() {
       const dailyRecordMap = new Map(dailyRecords.map(r => [r.date, r]));
       
       const allDates = new Set([...dayBookMap.keys(), ...dailyRecordMap.keys()]);
-      const combinedData: HistoryItem[] = [];
+      const combinedDataUnsorted: HistoryItem[] = [];
 
       for (const date of allDates) {
         const dayBook = dayBookMap.get(date) || null;
         let dailyRecord = dailyRecordMap.get(date) || null;
         
-        if (dailyRecord) {
+        if (dailyRecord && dayBook) {
             const prevDate = format(subDays(new Date(date), 1), 'yyyy-MM-dd');
             const prevDayBook = dayBookMap.get(prevDate);
             
@@ -93,18 +94,39 @@ export default function HistoryScreen() {
             dailyRecord = { ...dailyRecord, bankReconciliation: mergedReconciliation };
         }
         
-        combinedData.push({
+        combinedDataUnsorted.push({
             date,
             dayBook,
             dailyRecord,
         });
       }
 
-      const sortedHistory = combinedData.sort(
+      // Sort oldest to newest to calculate running balance
+      const sortedForCalculation = combinedDataUnsorted.sort(
+        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+      );
+
+      let carryForwardForNextDay = 0;
+      const historyWithBalances = sortedForCalculation.map(item => {
+        if (!item.dayBook) {
+          return { ...item, calculatedTotals: null };
+        }
+        
+        // Use the carry-forward from the previous iteration
+        const totals = calculateTotals(item.dayBook, carryForwardForNextDay);
+        
+        // Determine the carry-forward for the *next* iteration
+        carryForwardForNextDay = item.dayBook.cashCollected ? 0 : totals.dayBalance;
+
+        return { ...item, calculatedTotals: totals };
+      });
+
+      // Now sort newest to oldest for display
+      const finalHistoryItems = historyWithBalances.sort(
         (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
       );
 
-      setHistoryItems(sortedHistory);
+      setHistoryItems(finalHistoryItems);
     } catch (error: any) {
       console.error('Error loading history:', error);
       showNotification(error.message || 'Failed to load history.', 'error');
@@ -167,13 +189,13 @@ export default function HistoryScreen() {
   };
 
   const renderHistoryCard = ({ item }: { item: HistoryItem }) => {
-    const { date, dayBook, dailyRecord } = item;
+    const { date, dayBook, dailyRecord, calculatedTotals } = item;
     const recordDate = new Date(date);
     const timezoneOffset = recordDate.getTimezoneOffset() * 60000;
     const adjustedDate = new Date(recordDate.getTime() + timezoneOffset);
     const isDeleting = deletingDate === date;
     
-    const totals = dayBook ? calculateTotals(dayBook, null) : null;
+    const totals = calculatedTotals;
     const totalPaymentsReceived = dailyRecord?.paymentsReceived?.reduce((sum, p) => sum + p.amount, 0) || 0;
 
     const getReconLabel = (type: string) => {
@@ -277,6 +299,11 @@ export default function HistoryScreen() {
                           onMonthChange={(month) => setCalendarMonth(month.dateString)}
                           onDayPress={onDayPress}
                           markedDates={markedDates}
+                          renderArrow={(direction) => 
+                            direction === 'left' ? 
+                            <ChevronLeft size={24} color="#2563eb" /> : 
+                            <ChevronRight size={24} color="#2563eb" />
+                          }
                           theme={{
                             todayTextColor: '#2563eb',
                             arrowColor: '#2563eb',

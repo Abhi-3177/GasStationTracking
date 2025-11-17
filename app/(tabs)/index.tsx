@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ScrollView, View, StyleSheet, Alert, Text, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import { format } from 'date-fns';
+import { format, subDays } from 'date-fns';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { ErrorBoundary } from '../../components/ErrorBoundary';
@@ -16,13 +16,14 @@ import { ExpensesSection } from '../../components/ExpensesSection';
 import { PaymentSettlement } from '../../components/PaymentSettlement';
 import { SummaryCard } from '../../components/SummaryCard';
 import { SaveButton } from '../../components/SaveButton';
-import { CreditEntryForm } from '../../components/CreditEntryForm';
+import { ManageSalesForm } from '../../components/ManageSalesForm';
 
-import { DayBookRecord, MachineReading, Account, OtherSale, CashTransaction, SviSale, Sale0332, CreditSale } from '../../types/daybook';
+import { DayBookRecord, MachineReading, Account, OtherSale, CashTransaction } from '../../types/daybook';
 import { calculateTotals } from '../../utils/calculations';
-import { saveRecord, getRecord, getPreviousRecord, getAllAccounts } from '../../utils/database';
+import { saveRecord, getRecord, getAllAccounts, getAllRecords } from '../../utils/database';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
+import { supabase } from '../../lib/supabase';
 
 const DEFAULT_OPENING_READINGS = {
   petrol: [697397.11, 108734.96, 556516.9, 255356.06],
@@ -69,7 +70,7 @@ const normalizeRecord = (loadedRecord: Partial<DayBookRecord>, defaultRecord: Da
         };
       }),
       diesel: defaultRecord.machines.diesel.map(defaultMachine => {
-        const loadedMachine = loadedRecord.machines?.diesel?.find(d => d.id === defaultMachine.id);
+        const loadedMachine = loadedRecord.machines?.diesel?.find(m => m.id === defaultMachine.id);
         return {
           ...defaultMachine,
           ...loadedMachine,
@@ -114,7 +115,9 @@ export default function DayBookScreen() {
   const [previousRecord, setPreviousRecord] = useState<DayBookRecord | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isCreditFormVisible, setIsCreditFormVisible] = useState(false);
+  const [isManageSalesFormVisible, setIsManageSalesFormVisible] = useState(false);
+  const [savedDates, setSavedDates] = useState<string[]>([]);
+  const [carryForwardBalance, setCarryForwardBalance] = useState(0);
 
   useEffect(() => {
     if (params.date && typeof params.date === 'string') {
@@ -135,12 +138,37 @@ export default function DayBookScreen() {
 
     setIsLoading(true);
     const dateKey = format(selectedDate, 'yyyy-MM-dd');
+    const prevDateKey = format(subDays(selectedDate, 1), 'yyyy-MM-dd');
     
     try {
-      const [existingRecord, prevRecord, allAccounts] = await Promise.all([
+      // New carry-forward calculation logic
+      const { data: recordsForCarryForward, error: rpcError } = await supabase.rpc('get_records_for_carry_forward', {
+        p_target_date: dateKey,
+      });
+
+      if (rpcError) {
+        throw new Error(`Failed to calculate carry-forward balance: ${rpcError.message}`);
+      }
+      
+      let runningBalance = 0;
+      if (recordsForCarryForward && recordsForCarryForward.length > 0) {
+        for (const rec of recordsForCarryForward) {
+          const dayBookData = rec.record as DayBookRecord;
+          if (dayBookData.cashCollected) {
+            runningBalance = 0; // Balance was settled, so it doesn't carry forward
+          } else {
+            const totalsForDay = calculateTotals(dayBookData, runningBalance);
+            runningBalance = totalsForDay.dayBalance;
+          }
+        }
+      }
+      setCarryForwardBalance(runningBalance);
+      
+      const [existingRecord, prevRecord, allAccounts, allRecords] = await Promise.all([
         getRecord(dateKey),
-        getPreviousRecord(dateKey),
+        getRecord(prevDateKey),
         getAllAccounts(),
+        getAllRecords(),
       ]);
       
       const defaultRecord = createNewRecord(dateKey, prevRecord);
@@ -154,6 +182,8 @@ export default function DayBookScreen() {
       
       setPreviousRecord(prevRecord);
       setAccounts(allAccounts);
+      setSavedDates(allRecords.map(r => r.date));
+
     } catch (error: any) {
       console.error('Error loading Day Book data:', error);
       Alert.alert('Loading Error', error.message || 'Could not load data for the selected date.');
@@ -187,14 +217,17 @@ export default function DayBookScreen() {
 
   const handleSaveDeductions = async (deductions: DayBookRecord['deductions']) => {
     if (!record) return;
-    const updatedRecord = { ...record, deductions };
+    const updatedRecord = { 
+        ...record, 
+        deductions,
+    };
     setRecord(updatedRecord);
     try {
       await saveRecord(updatedRecord);
       refreshData();
     } catch (error: any) {
       console.error("Failed to save deductions immediately:", error);
-      Alert.alert('Save Error', 'Could not save credit sales. Please try saving the entire Day Book again.');
+      Alert.alert('Save Error', 'Could not save deductions. Please try saving the entire Day Book again.');
     }
   };
 
@@ -231,7 +264,7 @@ export default function DayBookScreen() {
     );
   }
 
-  const totals = calculateTotals(record, previousRecord);
+  const totals = calculateTotals(record, carryForwardBalance);
 
   return (
     <SafeAreaProvider>
@@ -241,7 +274,8 @@ export default function DayBookScreen() {
             <View style={styles.content}>
               <DateSelector 
                 selectedDate={selectedDate} 
-                onDateChange={setSelectedDate} 
+                onDateChange={setSelectedDate}
+                savedDates={savedDates}
               />
               
               <AutoCarryForwardCard 
@@ -262,7 +296,7 @@ export default function DayBookScreen() {
               
               <DeductionsSection
                 deductions={record.deductions}
-                onManagePress={() => setIsCreditFormVisible(true)}
+                onManageAllSalesPress={() => setIsManageSalesFormVisible(true)}
               />
 
               <OtherSalesSection
@@ -298,12 +332,12 @@ export default function DayBookScreen() {
               <SaveButton onSave={handleSave} />
             </View>
           </ScrollView>
-          <CreditEntryForm
-            visible={isCreditFormVisible}
-            onClose={() => setIsCreditFormVisible(false)}
-            onSave={(newDeductions) => {
-                handleSaveDeductions(newDeductions);
-                setIsCreditFormVisible(false);
+          <ManageSalesForm
+            visible={isManageSalesFormVisible}
+            onClose={() => setIsManageSalesFormVisible(false)}
+            onSave={(deductions) => {
+                handleSaveDeductions(deductions);
+                setIsManageSalesFormVisible(false);
             }}
             initialDeductions={record.deductions}
             accounts={accounts}

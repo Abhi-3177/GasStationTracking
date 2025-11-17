@@ -169,11 +169,20 @@ export interface PaymentReceived {
   created_at: string;
 }
 
+export interface Sale0332BreakdownEntry {
+  id: string;
+  accountId: string;
+  name: string;
+  amount: number;
+  litres: number;
+}
+
 export interface DailyRecord {
   date: string;
   user_id: string;
   bankReconciliation: BankReconciliationEntry[];
   paymentsReceived: PaymentReceived[];
+  sales0332Breakdown?: Sale0332BreakdownEntry[];
 }
 
 export interface Transaction {
@@ -185,6 +194,7 @@ export interface Transaction {
   settlementStatus?: 'unsettled' | 'partially-settled' | 'fully-settled';
   settledAmount?: number;
   runningBalance?: number;
+  isSent?: boolean; // For follow-up tracking
   // New fields for details
   receiptNumber?: string;
   vehicleNumber?: string;
@@ -199,6 +209,37 @@ export interface StockOrder {
     fuel_type: 'petrol' | 'diesel';
     litres: number;
     created_at: string;
+}
+
+export interface StockReport {
+  id?: string;
+  user_id: string;
+  start_date: string;
+  end_date: string;
+  opening_stock_petrol: number;
+  opening_stock_diesel: number;
+  closing_stock_petrol: number; // Represents physical stock
+  closing_stock_diesel: number; // Represents physical stock
+  opening_readings_petrol: number[];
+  opening_readings_diesel: number[];
+  closing_readings_petrol: number[];
+  closing_readings_diesel: number[];
+  report_data: {
+    petrol: StockReportData;
+    diesel: StockReportData;
+  } | null;
+  created_at?: string;
+}
+
+export interface StockReportData {
+  totalSoldFromReading: number;
+  testingVolume: number;
+  finalSoldVolume: number;
+  openingStock: number;
+  stockOrdered: number;
+  finalStockFromReport: number;
+  physicalStock: number;
+  surplusOrShortage: number;
 }
 
 export interface AgedDebtor {

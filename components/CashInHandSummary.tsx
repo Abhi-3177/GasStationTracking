@@ -8,16 +8,16 @@ import { formatIndianCurrency } from '../utils/formatters';
 
 interface CashInHandSummaryProps {
   dayBookRecord: DayBookRecord | null;
-  previousDayBookRecord: DayBookRecord | null;
   dailyRecord: DailyRecord | null;
+  carryForward: number;
 }
 
-export function CashInHandSummary({ dayBookRecord, previousDayBookRecord, dailyRecord }: CashInHandSummaryProps) {
+export function CashInHandSummary({ dayBookRecord, dailyRecord, carryForward }: CashInHandSummaryProps) {
   if (!dayBookRecord || !dailyRecord) {
     return null; // Don't render if data is not available
   }
 
-  const dayBookTotals = calculateTotals(dayBookRecord, previousDayBookRecord);
+  const dayBookTotals = calculateTotals(dayBookRecord, carryForward);
   const totalPaymentsReceived = dailyRecord.paymentsReceived.reduce((sum, p) => sum + p.amount, 0);
   
   const cashInHand = dayBookTotals.dayBalance + totalPaymentsReceived;

@@ -8,10 +8,9 @@ import { formatIndianCurrency } from '../utils/formatters';
 
 interface DayBookSummaryProps {
   dayBookRecord: DayBookRecord | null;
-  previousDayBookRecord?: DayBookRecord | null; // Make previous record optional
 }
 
-export function DayBookSummary({ dayBookRecord, previousDayBookRecord = null }: DayBookSummaryProps) {
+export function DayBookSummary({ dayBookRecord }: DayBookSummaryProps) {
   if (!dayBookRecord) {
     return (
       <Card>
@@ -24,7 +23,7 @@ export function DayBookSummary({ dayBookRecord, previousDayBookRecord = null }: 
     );
   }
   
-  const totals = calculateTotals(dayBookRecord, previousDayBookRecord);
+  const totals = calculateTotals(dayBookRecord, 0); // Calculate isolated totals
 
   return (
     <Card>

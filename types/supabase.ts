@@ -1,4 +1,4 @@
-import { DayBookRecord, StockOrder } from "./daybook"
+import { DayBookRecord, StockOrder, StockReport } from "./daybook"
 
 export type Json =
   | string
@@ -134,6 +134,7 @@ export type Database = {
           date: string
           user_id: string
           bank_reconciliation: Json | null
+          sales_0332_breakdown: Json | null
           created_at: string
           updated_at: string
         }
@@ -141,6 +142,7 @@ export type Database = {
           date: string
           user_id: string
           bank_reconciliation?: Json | null
+          sales_0332_breakdown?: Json | null
           created_at?: string
           updated_at?: string
         }
@@ -148,6 +150,7 @@ export type Database = {
           date?: string
           user_id?: string
           bank_reconciliation?: Json | null
+          sales_0332_breakdown?: Json | null
           created_at?: string
           updated_at?: string
         }
@@ -261,6 +264,68 @@ export type Database = {
           },
         ]
       }
+      stock_reports: {
+        Row: StockReport
+        Insert: Omit<StockReport, 'id' | 'created_at'>
+        Update: Partial<Omit<StockReport, 'id' | 'created_at'>>
+        Relationships: [
+          {
+            foreignKeyName: "stock_reports_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sent_receipts: {
+        Row: {
+          id: string;
+          user_id: string;
+          account_id: string;
+          transaction_id: string;
+          receipt_number: string | null;
+          amount: number;
+          transaction_date: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          account_id: string;
+          transaction_id: string;
+          receipt_number?: string | null;
+          amount: number;
+          transaction_date: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          account_id?: string;
+          transaction_id?: string;
+          receipt_number?: string | null;
+          amount?: number;
+          transaction_date?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "sent_receipts_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sent_receipts_account_id_fkey";
+            columns: ["account_id"];
+            isOneToOne: false;
+            referencedRelation: "accounts";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
     }
     Views: {
       [_ in never]: never

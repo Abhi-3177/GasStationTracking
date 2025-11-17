@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { Tabs, useRouter } from 'expo-router';
-import { BookOpen, History, ClipboardList, Settings, Users, BarChart2, PieChart } from 'lucide-react-native';
+import { BookOpen, History, ClipboardList, Settings, Users, BarChart2, PieChart, Send } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { Header } from '../../components/Header';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
@@ -42,6 +42,7 @@ export default function TabLayout() {
           if (route.name === 'daily-record') title = 'Daily Record';
           if (route.name === 'history') title = 'History';
           if (route.name === 'accounts') title = 'Accounts';
+          if (route.name === 'follow-up') title = 'Follow Up';
           if (route.name === 'reports') title = 'Reports';
           if (route.name === 'analytical') title = 'Analytics';
           if (route.name === 'settings') title = 'Settings';
@@ -71,6 +72,13 @@ export default function TabLayout() {
         options={{
           title: 'Accounts',
           tabBarIcon: ({ color, size }) => <Users color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="follow-up"
+        options={{
+          title: 'Follow Up',
+          tabBarIcon: ({ color, size }) => <Send color={color} size={size} />,
         }}
       />
        <Tabs.Screen

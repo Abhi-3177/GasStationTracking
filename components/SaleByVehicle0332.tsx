@@ -1,496 +1,295 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Modal, ScrollView } from 'react-native';
-import { Truck, Plus, Trash2, X, CheckCircle, AlertTriangle } from 'lucide-react-native';
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView, TextInput, ActivityIndicator } from 'react-native';
+import { Truck, Plus, Edit, Trash2, X } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card } from './Card';
-import { NumberInput } from './NumberInput';
 import { AccountAutocomplete } from './AccountAutocomplete';
-import { DayBookRecord, DailyRecordData, SaleByVehicleEntry, Account } from '../types/daybook';
+import { NumberInput } from './NumberInput';
+import { DayBookRecord, DailyRecord, Account, Sale0332BreakdownEntry } from '../types/daybook';
+import { formatIndianCurrency, formatLitres } from '../utils/formatters';
 
 interface SaleByVehicle0332Props {
-  dayBookRecord: DayBookRecord;
-  dailyRecord: DailyRecordData;
+  dayBookRecord: DayBookRecord | null;
+  dailyRecord: DailyRecord;
   accounts: Account[];
-  onUpdateDailyRecord: (updates: Partial<DailyRecordData>) => void;
+  onUpdateBreakdown: (breakdown: Sale0332BreakdownEntry[]) => Promise<void>;
 }
 
-export function SaleByVehicle0332({ 
-  dayBookRecord, 
-  dailyRecord, 
-  accounts, 
-  onUpdateDailyRecord 
-}: SaleByVehicle0332Props) {
-  const [showForm, setShowForm] = useState(false);
-  const [accountName, setAccountName] = useState('');
-  const [newSaleEntry, setNewSaleEntry] = useState<Omit<SaleByVehicleEntry, 'id'>>({
-    accountId: '',
-    vehicleNumber: '',
-    litres: 0,
-    amount: 0,
-    reconciled: false,
-  });
+export function SaleByVehicle0332({ dayBookRecord, dailyRecord, accounts, onUpdateBreakdown }: SaleByVehicle0332Props) {
+  const [isFormVisible, setIsFormVisible] = useState(false);
+  const [breakdown, setBreakdown] = useState<Sale0332BreakdownEntry[]>([]);
 
-  const addSaleEntry = () => {
-    if (!newSaleEntry.accountId) {
-      alert('Please select an account');
-      return;
-    }
+  useEffect(() => {
+    setBreakdown(dailyRecord.sales0332Breakdown || []);
+  }, [dailyRecord.sales0332Breakdown]);
 
-    const saleEntry: SaleByVehicleEntry = {
-      id: Date.now().toString(),
-      ...newSaleEntry,
-    };
-    
-    const updatedSaleByVehicle = [...dailyRecord.saleByVehicle0332, saleEntry];
-    onUpdateDailyRecord({ saleByVehicle0332: updatedSaleByVehicle });
-    
-    setNewSaleEntry({
-      accountId: '',
-      vehicleNumber: '',
-      litres: 0,
-      amount: 0,
-      reconciled: false,
-    });
-    setAccountName('');
-    setShowForm(false);
+  const sale0332ForCurrentDay = useMemo(() => {
+    return dayBookRecord?.deductions.sales0332.find(s => s.name.toLowerCase().trim() === 'svi 0332');
+  }, [dayBookRecord]);
+
+  if (!sale0332ForCurrentDay) {
+    return null; // Don't render if there was no 0332 sale for the current day
+  }
+
+  const totalLitresFilled = sale0332ForCurrentDay.litres;
+  const totalAmountFilled = sale0332ForCurrentDay.amount;
+
+  const totalLitresSold = breakdown.reduce((sum, entry) => sum + entry.litres, 0);
+  const totalAmountSold = breakdown.reduce((sum, entry) => sum + entry.amount, 0);
+  const remainingLitres = totalLitresFilled - totalLitresSold;
+
+  const handleSaveBreakdown = async (newBreakdown: Sale0332BreakdownEntry[]) => {
+    await onUpdateBreakdown(newBreakdown);
+    setIsFormVisible(false);
   };
-
-  const removeSaleEntry = (entryId: string) => {
-    const updatedSaleByVehicle = dailyRecord.saleByVehicle0332.filter(e => e.id !== entryId);
-    onUpdateDailyRecord({ saleByVehicle0332: updatedSaleByVehicle });
-  };
-
-  const toggleReconciliation = (entryId: string) => {
-    const updatedSaleByVehicle = dailyRecord.saleByVehicle0332.map(entry =>
-      entry.id === entryId ? { ...entry, reconciled: !entry.reconciled } : entry
-    );
-    onUpdateDailyRecord({ saleByVehicle0332: updatedSaleByVehicle });
-  };
-
-  const getAccountNameById = (accountId: string) => {
-    const account = accounts.find(acc => acc.id === accountId);
-    return account ? account.name : 'Unknown Account';
-  };
-
-  // Calculate reconciliation
-  const total0332FromDayBook = dayBookRecord.deductions.sales0332.reduce((sum, sale) => sum + sale.amount, 0);
-  const totalFromDailyRecord = dailyRecord.saleByVehicle0332.reduce((sum, sale) => sum + sale.amount, 0);
-  const hasMismatch = Math.abs(total0332FromDayBook - totalFromDailyRecord) > 0.01;
 
   return (
-    <Card>
-      <View style={styles.header}>
-        <Truck size={20} color="#7c3aed" />
-        <Text style={styles.title}>Sale by Vehicle - 0332 Section</Text>
-      </View>
-
-      {hasMismatch && (
-        <View style={styles.mismatchWarning}>
-          <AlertTriangle size={16} color="#f59e0b" />
-          <Text style={styles.mismatchText}>
-            0332 Sales mismatch: Day Book ₹{total0332FromDayBook.toFixed(2)}, 
-            Daily Record ₹{totalFromDailyRecord.toFixed(2)}
-          </Text>
+    <>
+      <Card style={styles.card}>
+        <View style={styles.header}>
+          <Truck size={20} color="#ca8a04" />
+          <Text style={styles.title}>Vehicle 0332 Sales Breakdown</Text>
         </View>
-      )}
+        <Text style={styles.subtitle}>
+          Log the individual sales made from the diesel loaded into vehicle 0332.
+        </Text>
 
-      <View style={styles.headerSection}>
-        <Text style={styles.subtitle}>Record 0332 sales by vehicle and account</Text>
-        <TouchableOpacity
-          onPress={() => setShowForm(true)}
-          style={styles.addButton}
-        >
-          <Plus size={16} color="#ffffff" />
-          <Text style={styles.addButtonText}>Add 0332 Sale</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.salesSection}>
-        {dailyRecord.saleByVehicle0332.length === 0 ? (
-          <Text style={styles.noDataText}>No 0332 sales recorded today</Text>
-        ) : (
-          dailyRecord.saleByVehicle0332.map(sale => (
-            <View key={sale.id} style={styles.saleRow}>
-              <View style={styles.saleInfo}>
-                <Text style={styles.accountName}>{getAccountNameById(sale.accountId)}</Text>
-                <Text style={styles.saleDetails}>
-                  Litres: {sale.litres.toFixed(2)}L | Amount: ₹{sale.amount.toFixed(2)}
-                </Text>
-                {sale.vehicleNumber && (
-                  <Text style={styles.vehicleNumber}>Vehicle: {sale.vehicleNumber}</Text>
-                )}
-              </View>
-              
-              <TouchableOpacity
-                onPress={() => toggleReconciliation(sale.id)}
-                style={[
-                  styles.reconcileButton,
-                  sale.reconciled && styles.reconcileButtonActive,
-                ]}
-              >
-                <CheckCircle 
-                  size={16} 
-                  color={sale.reconciled ? '#ffffff' : '#6b7280'} 
-                />
-                <Text style={[
-                  styles.reconcileButtonText,
-                  sale.reconciled && styles.reconcileButtonTextActive,
-                ]}>
-                  {sale.reconciled ? 'Reconciled' : 'Pending'}
-                </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                onPress={() => removeSaleEntry(sale.id)}
-                style={styles.removeButton}
-              >
-                <Trash2 size={16} color="#dc2626" />
-              </TouchableOpacity>
-            </View>
-          ))
-        )}
-      </View>
-
-      <View style={styles.summarySection}>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Day Book 0332 Total:</Text>
-          <Text style={styles.summaryValue}>₹{total0332FromDayBook.toFixed(2)}</Text>
-        </View>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Daily Record Total:</Text>
-          <Text style={[
-            styles.summaryValue,
-            hasMismatch && styles.mismatchValue
-          ]}>
-            ₹{totalFromDailyRecord.toFixed(2)}
-          </Text>
-        </View>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Reconciled Amount:</Text>
-          <Text style={styles.summaryValue}>
-            ₹{dailyRecord.saleByVehicle0332
-              .filter(sale => sale.reconciled)
-              .reduce((sum, sale) => sum + sale.amount, 0)
-              .toFixed(2)}
-          </Text>
-        </View>
-      </View>
-
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={showForm}
-        onRequestClose={() => setShowForm(false)}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add 0332 Sale</Text>
-              <TouchableOpacity
-                onPress={() => setShowForm(false)}
-                style={styles.closeButton}
-              >
-                <X size={24} color="#6b7280" />
-              </TouchableOpacity>
-            </View>
-            <ScrollView keyboardShouldPersistTaps="handled">
-              <View style={styles.formSection}>
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Account Name</Text>
-                  <AccountAutocomplete
-                    accounts={accounts}
-                    value={accountName}
-                    onValueChange={setAccountName}
-                    onAccountSelect={(account) => {
-                      setAccountName(account.name);
-                      setNewSaleEntry({ ...newSaleEntry, accountId: account.id });
-                    }}
-                    placeholder="Search for an account"
-                  />
-                </View>
-
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Vehicle Number (Optional)</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    value={newSaleEntry.vehicleNumber}
-                    onChangeText={(text) => setNewSaleEntry({ ...newSaleEntry, vehicleNumber: text })}
-                    placeholder="Vehicle number"
-                  />
-                </View>
-
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Litres</Text>
-                  <NumberInput
-                    value={newSaleEntry.litres}
-                    onChangeValue={(value) => setNewSaleEntry({ ...newSaleEntry, litres: value })}
-                    placeholder="0.00"
-                    precision={2}
-                  />
-                </View>
-
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Amount (₹)</Text>
-                  <NumberInput
-                    value={newSaleEntry.amount}
-                    onChangeValue={(value) => setNewSaleEntry({ ...newSaleEntry, amount: value })}
-                    placeholder="0.00"
-                    precision={2}
-                  />
-                </View>
-              </View>
-
-              <View style={styles.formActions}>
-                <TouchableOpacity
-                  onPress={() => setShowForm(false)}
-                  style={styles.cancelButton}
-                >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={addSaleEntry}
-                  style={styles.saveButton}
-                >
-                  <Text style={styles.saveButtonText}>Add Sale</Text>
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
+        <View style={styles.summaryGrid}>
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryLabel}>Total Filled</Text>
+            <Text style={styles.summaryValue}>{formatLitres(totalLitresFilled)}</Text>
+            <Text style={styles.summarySubValue}>{formatIndianCurrency(totalAmountFilled)}</Text>
+          </View>
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryLabel}>Total Sold</Text>
+            <Text style={styles.summaryValue}>{formatLitres(totalLitresSold)}</Text>
+            <Text style={styles.summarySubValue}>{formatIndianCurrency(totalAmountSold)}</Text>
+          </View>
+          <View style={[styles.summaryItem, styles.remainingItem]}>
+            <Text style={[styles.summaryLabel, styles.remainingLabel]}>Remaining</Text>
+            <Text style={[styles.summaryValue, styles.remainingValue]}>{formatLitres(remainingLitres)}</Text>
           </View>
         </View>
-      </Modal>
-    </Card>
+
+        {breakdown.length > 0 && (
+            <View style={styles.breakdownList}>
+                <Text style={styles.listHeader}>Breakdown Entries</Text>
+                {breakdown.map(entry => (
+                    <View key={entry.id} style={styles.breakdownRow}>
+                        <Text style={styles.breakdownAccount}>{entry.name || 'N/A'}</Text>
+                        <View>
+                            <Text style={styles.breakdownAmount}>{formatIndianCurrency(entry.amount)}</Text>
+                            <Text style={styles.breakdownLitres}>{formatLitres(entry.litres)}</Text>
+                        </View>
+                    </View>
+                ))}
+            </View>
+        )}
+
+        <TouchableOpacity style={styles.manageButton} onPress={() => setIsFormVisible(true)}>
+          <Edit size={14} color="#fff" />
+          <Text style={styles.manageButtonText}>Manage Sales</Text>
+        </TouchableOpacity>
+      </Card>
+
+      <Sale0332BreakdownForm
+        visible={isFormVisible}
+        onClose={() => setIsFormVisible(false)}
+        initialBreakdown={breakdown}
+        accounts={accounts}
+        onSave={handleSaveBreakdown}
+        dieselPrice={dayBookRecord?.prices.diesel || 0}
+      />
+    </>
+  );
+}
+
+interface BreakdownFormProps {
+  visible: boolean;
+  onClose: () => void;
+  initialBreakdown: Sale0332BreakdownEntry[];
+  accounts: Account[];
+  onSave: (breakdown: Sale0332BreakdownEntry[]) => Promise<void>;
+  dieselPrice: number;
+}
+
+function Sale0332BreakdownForm({ visible, onClose, onSave, initialBreakdown, accounts, dieselPrice }: BreakdownFormProps) {
+  const [breakdown, setBreakdown] = useState<Sale0332BreakdownEntry[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setBreakdown(initialBreakdown.length > 0 ? initialBreakdown : [{ id: Date.now().toString(), accountId: '', name: '', amount: 0, litres: 0 }]);
+    }
+  }, [visible, initialBreakdown]);
+
+  const handleUpdateEntry = (id: string, updates: Partial<Sale0332BreakdownEntry>) => {
+    setBreakdown(prev => prev.map(entry => {
+      if (entry.id === id) {
+        const newEntry = { ...entry, ...updates };
+        if (dieselPrice > 0) {
+          if ('amount' in updates) {
+            newEntry.litres = Math.round((newEntry.amount / dieselPrice) * 100) / 100;
+          } else if ('litres' in updates) {
+            newEntry.amount = Math.round(newEntry.litres * dieselPrice);
+          }
+        }
+        return newEntry;
+      }
+      return entry;
+    }));
+  };
+
+  const handleAddEntry = (index: number) => {
+    const newEntry: Sale0332BreakdownEntry = { id: Date.now().toString(), accountId: '', name: '', amount: 0, litres: 0 };
+    const newBreakdown = [...breakdown];
+    newBreakdown.splice(index + 1, 0, newEntry);
+    setBreakdown(newBreakdown);
+  };
+
+  const handleRemoveEntry = (id: string) => {
+    if (breakdown.length > 1) {
+      setBreakdown(prev => prev.filter(entry => entry.id !== id));
+    } else {
+      setBreakdown([{ id: Date.now().toString(), accountId: '', name: '', amount: 0, litres: 0 }]);
+    }
+  };
+
+  const handleDone = async () => {
+    setIsSaving(true);
+    try {
+        const validEntries = breakdown.filter(entry => entry.name && entry.amount > 0);
+        await onSave(validEntries);
+    } catch (error) {
+        // Parent component will show notification
+        console.error("Error saving breakdown:", error);
+    } finally {
+        setIsSaving(false);
+    }
+  };
+
+  return (
+    <Modal animationType="slide" transparent={false} visible={visible} onRequestClose={onClose}>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>Manage 0332 Sales Breakdown</Text>
+          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+            <X size={24} color="#6b7280" />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.tableHeader}>
+          <Text style={[styles.headerText, styles.cellAccount]}>Account</Text>
+          <Text style={[styles.headerText, styles.cellAmount]}>Amount</Text>
+          <Text style={[styles.headerText, styles.cellLitres]}>Litres</Text>
+          <View style={{ width: 76 }} />
+        </View>
+
+        <ScrollView style={styles.scrollView} keyboardShouldPersistTaps="handled">
+          <View style={styles.listContainer}>
+            {breakdown.map((entry, index) => (
+              <View key={entry.id} style={[styles.saleRow, { zIndex: breakdown.length - index }]}>
+                <View style={styles.cellAccount}>
+                  <AccountAutocomplete
+                    accounts={accounts}
+                    value={entry.name}
+                    onValueChange={name => handleUpdateEntry(entry.id, { name, accountId: '' })}
+                    onAccountSelect={account => handleUpdateEntry(entry.id, { name: account.name, accountId: account.id })}
+                  />
+                </View>
+                <View style={styles.cellAmount}><NumberInput value={entry.amount} onChangeValue={amount => handleUpdateEntry(entry.id, { amount })} precision={2} /></View>
+                <View style={styles.cellLitres}><NumberInput value={entry.litres} onChangeValue={litres => handleUpdateEntry(entry.id, { litres })} precision={2} /></View>
+                <View style={styles.rowActionButtons}>
+                  <TouchableOpacity onPress={() => handleRemoveEntry(entry.id)} style={styles.removeButton}><Trash2 size={16} color="#dc2626" /></TouchableOpacity>
+                  <TouchableOpacity onPress={() => handleAddEntry(index)} style={styles.addButton}><Plus size={16} color="#059669" /></TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </View>
+        </ScrollView>
+
+        <View style={styles.footer}>
+          <TouchableOpacity style={[styles.doneButton, isSaving && styles.disabledButton]} onPress={handleDone} disabled={isSaving}>
+            {isSaving ? (
+                <ActivityIndicator color="#fff" />
+            ) : (
+                <Text style={styles.doneButtonText}>Done</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1f2937',
-  },
-  mismatchWarning: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#fef3c7',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#f59e0b',
-  },
-  mismatchText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#92400e',
-  },
-  headerSection: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#6b7280',
-    flex: 1,
-  },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#7c3aed',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  addButtonText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  salesSection: {
-    marginBottom: 16,
-  },
-  noDataText: {
-    fontSize: 14,
-    color: '#6b7280',
-    fontStyle: 'italic',
-    textAlign: 'center',
-    padding: 16,
-  },
-  saleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 12,
-    backgroundColor: '#f9fafb',
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  saleInfo: {
-    flex: 1,
-  },
-  accountName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: 2,
-  },
-  saleDetails: {
-    fontSize: 12,
-    color: '#7c3aed',
-    marginBottom: 2,
-  },
-  vehicleNumber: {
-    fontSize: 12,
-    color: '#6b7280',
-  },
-  reconcileButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: '#f3f4f6',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    marginRight: 8,
-  },
-  reconcileButtonActive: {
-    backgroundColor: '#7c3aed',
-    borderColor: '#7c3aed',
-  },
-  reconcileButtonText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#6b7280',
-  },
-  reconcileButtonTextActive: {
-    color: '#ffffff',
-  },
-  removeButton: {
-    padding: 8,
-    borderRadius: 6,
-    backgroundColor: '#fef2f2',
-  },
-  summarySection: {
-    backgroundColor: '#f5f3ff',
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#7c3aed',
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  summaryLabel: {
-    fontSize: 14,
-    color: '#5b21b6',
-    fontWeight: '500',
-  },
-  summaryValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#5b21b6',
-  },
-  mismatchValue: {
-    color: '#dc2626',
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  modalContent: {
-    width: '90%',
-    maxHeight: '80%',
-    backgroundColor: 'white',
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1f2937',
-  },
-  closeButton: {
-    padding: 4,
-  },
-  formSection: {
-    padding: 20,
-    gap: 16,
-  },
-  inputGroup: {
-    gap: 8,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#374151',
-  },
-  textInput: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
-    backgroundColor: '#ffffff',
-    color: '#1f2937',
-  },
-  formActions: {
-    flexDirection: 'row',
-    gap: 12,
-    padding: 20,
+  card: { backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#facc15' },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  title: { fontSize: 18, fontWeight: '600', color: '#1f2937' },
+  subtitle: { fontSize: 14, color: '#6b7280', marginTop: 4, marginBottom: 16 },
+  summaryGrid: { flexDirection: 'row', gap: 12, marginBottom: 16 },
+  summaryItem: { flex: 1, backgroundColor: '#fefce8', padding: 12, borderRadius: 8, alignItems: 'center', gap: 2 },
+  remainingItem: { backgroundColor: '#f0f9ff' },
+  summaryLabel: { fontSize: 12, color: '#854d0e', fontWeight: '500' },
+  remainingLabel: { color: '#0c4a6e' },
+  summaryValue: { fontSize: 16, fontWeight: '700', color: '#a16207' },
+  remainingValue: { color: '#0369a1' },
+  summarySubValue: { fontSize: 12, color: '#a16207' },
+  manageButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#ca8a04', paddingVertical: 12, borderRadius: 8 },
+  manageButtonText: { color: '#fff', fontWeight: '600' },
+  container: { flex: 1, backgroundColor: '#f8fafc' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#e5e7eb', backgroundColor: '#fff' },
+  modalTitle: { fontSize: 20, fontWeight: '700', color: '#1f2937' },
+  closeButton: { padding: 4 },
+  tableHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#d1d5db', backgroundColor: '#f1f5f9', gap: 8 },
+  headerText: { fontSize: 12, fontWeight: '600', color: '#475569', textAlign: 'center' },
+  scrollView: { flex: 1 },
+  listContainer: { padding: 16, gap: 12 },
+  saleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cellAccount: { flex: 3 },
+  cellAmount: { flex: 1.5 },
+  cellLitres: { flex: 1.5 },
+  rowActionButtons: { flexDirection: 'row', gap: 4 },
+  removeButton: { padding: 8, borderRadius: 6, backgroundColor: '#fef2f2' },
+  addButton: { padding: 8, borderRadius: 6, backgroundColor: '#ecfdf5' },
+  footer: { padding: 16, borderTopWidth: 1, borderTopColor: '#e5e7eb', backgroundColor: '#fff' },
+  doneButton: { backgroundColor: '#059669', padding: 16, borderRadius: 12, alignItems: 'center' },
+  doneButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  disabledButton: { backgroundColor: '#9ca3af' },
+  breakdownList: {
+    marginTop: 16,
     borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
+    borderColor: '#fde68a',
+    paddingTop: 12,
   },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    backgroundColor: '#f3f4f6',
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#374151',
-  },
-  saveButton: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    backgroundColor: '#7c3aed',
-    alignItems: 'center',
-  },
-  saveButtonText: {
+  listHeader: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#ffffff',
+    color: '#854d0e',
+    marginBottom: 8,
+  },
+  breakdownRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#fef3c7',
+  },
+  breakdownAccount: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#1f2937',
+  },
+  breakdownAmount: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#a16207',
+    textAlign: 'right',
+  },
+  breakdownLitres: {
+    fontSize: 12,
+    color: '#ca8a04',
+    textAlign: 'right',
   },
 });

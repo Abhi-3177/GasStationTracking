@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, 
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useNavigation } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
-import { ChevronLeft, ArrowUpDown, PlusCircle, Trash2, CheckCircle } from 'lucide-react-native';
+import { ChevronLeft, ArrowUpDown, PlusCircle, Trash2, CheckCircle, Send } from 'lucide-react-native';
 
 import { Card } from '../../components/Card';
 import { ConfirmModal } from '../../components/ConfirmModal';
@@ -55,20 +55,20 @@ export default function AccountLedgerScreen() {
   const processedTransactions = useMemo(() => {
     const sortedTxs = [...transactions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    let availableCredit = sortedTxs
-      .filter(tx => tx.type === 'credit')
-      .reduce((sum, tx) => sum + tx.amount, 0);
-
+    let availableCredit = 0;
     const settledTxs = sortedTxs.map(tx => {
-      if (tx.type === 'debit' && availableCredit > 0) {
-        const amountToSettle = Math.min(availableCredit, tx.amount);
-        availableCredit -= amountToSettle;
-
-        if (amountToSettle >= tx.amount) {
-          return { ...tx, settlementStatus: 'fully-settled' as const, settledAmount: tx.amount };
-        } else {
-          return { ...tx, settlementStatus: 'partially-settled' as const, settledAmount: amountToSettle };
-        }
+      if (tx.type === 'credit') {
+        availableCredit += tx.amount;
+        return { ...tx, settlementStatus: 'unsettled' as const, settledAmount: 0 };
+      }
+      // It's a debit
+      const amountToSettle = Math.min(availableCredit, tx.amount);
+      availableCredit -= amountToSettle;
+      
+      if (amountToSettle >= tx.amount) {
+        return { ...tx, settlementStatus: 'fully-settled' as const, settledAmount: tx.amount };
+      } else if (amountToSettle > 0) {
+        return { ...tx, settlementStatus: 'partially-settled' as const, settledAmount: amountToSettle };
       }
       return { ...tx, settlementStatus: 'unsettled' as const, settledAmount: 0 };
     });
@@ -135,19 +135,27 @@ export default function AccountLedgerScreen() {
             <Text style={styles.dateCell}>{format(adjustedDate, 'dd/MM/yy')}</Text>
             <View style={styles.descriptionContainer}>
                 <Text style={styles.descriptionCell}>{item.description}</Text>
-                {item.settlementStatus === 'fully-settled' && (
-                    <View style={[styles.badge, styles.settledBadge]}>
-                        <CheckCircle size={12} color="#059669" />
-                        <Text style={styles.badgeText}>Settled</Text>
-                    </View>
-                )}
-                {item.settlementStatus === 'partially-settled' && (
-                    <View style={[styles.badge, styles.partialBadge]}>
-                        <Text style={styles.badgeText}>
-                            Partial (rem: {formatIndianCurrency(item.amount - (item.settledAmount || 0))})
-                        </Text>
-                    </View>
-                )}
+                <View style={styles.badgesContainer}>
+                    {item.settlementStatus === 'fully-settled' && (
+                        <View style={[styles.badge, styles.settledBadge]}>
+                            <CheckCircle size={12} color="#059669" />
+                            <Text style={styles.badgeText}>Settled</Text>
+                        </View>
+                    )}
+                    {item.settlementStatus === 'partially-settled' && (
+                        <View style={[styles.badge, styles.partialBadge]}>
+                            <Text style={styles.badgeText}>
+                                Partial (rem: {formatIndianCurrency(item.amount - (item.settledAmount || 0))})
+                            </Text>
+                        </View>
+                    )}
+                    {item.isSent && (
+                        <View style={[styles.badge, styles.sentBadge]}>
+                            <Send size={12} color="#4b5563" />
+                            <Text style={styles.badgeText}>Sent</Text>
+                        </View>
+                    )}
+                </View>
             </View>
         </View>
         <View style={styles.amounts}>
@@ -264,6 +272,7 @@ const styles = StyleSheet.create({
   quickActions: { flexDirection: 'row', padding: 16, gap: 12, borderTopWidth: 1, borderTopColor: '#e5e7eb', backgroundColor: '#fff' },
   actionButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 14, borderRadius: 8, gap: 8, backgroundColor: '#f9fafb', borderWidth: 1, borderColor: '#e5e7eb' },
   actionButtonText: { fontSize: 14, fontWeight: '600' },
+  badgesContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginTop: 4 },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -272,7 +281,6 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 12,
     alignSelf: 'flex-start',
-    marginTop: 4,
   },
   settledBadge: {
     backgroundColor: '#ecfdf5',
@@ -280,9 +288,12 @@ const styles = StyleSheet.create({
   partialBadge: {
     backgroundColor: '#fffbeb',
   },
+  sentBadge: {
+    backgroundColor: '#f1f5f9',
+  },
   badgeText: {
     fontSize: 10,
     fontWeight: '600',
-    color: '#a16207',
+    color: '#4b5563',
   },
 });

@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import { DayBookRecord, Account, DailyRecord, PaymentReceived, CreditSale, Sale0332, BalanceEntry, Transaction, SviSale, StockOrder, AgedDebtor } from '../types/daybook';
+import { DayBookRecord, Account, DailyRecord, PaymentReceived, CreditSale, Sale0332, BalanceEntry, Transaction, SviSale, StockOrder, AgedDebtor, StockReport, Sale0332BreakdownEntry } from '../types/daybook';
 import { format, subDays, startOfMonth, endOfMonth } from 'date-fns';
 
 // --- Text Formatting Helpers ---
@@ -26,6 +26,85 @@ const getUserId = async (): Promise<string> => {
   }
   return session.user.id;
 };
+
+// --- START: Auto-account creation and linking logic ---
+async function linkAccountIdsForEntries<T extends { name: string; accountId?: string | null }>(
+  entries: T[],
+  userId: string
+): Promise<{ processedEntries: T[]; newAccountsCreated: boolean }> {
+  if (!entries || entries.length === 0) {
+    return { processedEntries: entries, newAccountsCreated: false };
+  }
+
+  const namesToLink = new Set<string>();
+  entries.forEach(entry => {
+    if (entry.name && !entry.accountId) {
+      namesToLink.add(toTitleCase(entry.name.trim()));
+    }
+  });
+
+  if (namesToLink.size === 0) {
+    return { processedEntries: entries, newAccountsCreated: false };
+  }
+
+  const { data: existingAccounts, error: fetchError } = await supabase
+    .from('accounts')
+    .select('id, name')
+    .eq('user_id', userId);
+
+  if (fetchError) {
+    console.error("Auto-linking failed: Could not fetch existing accounts.", fetchError);
+    return { processedEntries: entries, newAccountsCreated: false }; // Return original on error
+  }
+
+  const existingAccountMap = new Map(
+    (existingAccounts || []).map(acc => [acc.name.trim().toLowerCase(), acc.id])
+  );
+
+  const newAccountNames: string[] = [];
+  for (const name of namesToLink) {
+    if (!existingAccountMap.has(name.toLowerCase())) {
+      newAccountNames.push(name);
+    }
+  }
+
+  let newAccountsCreated = false;
+  if (newAccountNames.length > 0) {
+    const accountsToInsert = newAccountNames.map(name => ({
+      name,
+      type: 'factory' as 'factory' | 'transporter',
+      user_id: userId,
+    }));
+
+    const { data: createdAccounts, error: createError } = await supabase
+      .from('accounts')
+      .insert(accountsToInsert)
+      .select('id, name');
+
+    if (createError) {
+      console.error("Failed to auto-create new accounts:", createError);
+    } else if (createdAccounts) {
+      newAccountsCreated = true;
+      createdAccounts.forEach(acc => {
+        existingAccountMap.set(acc.name.trim().toLowerCase(), acc.id);
+      });
+    }
+  }
+
+  const processedEntries = entries.map(entry => {
+    if (entry.name && !entry.accountId) {
+      const accountId = existingAccountMap.get(toTitleCase(entry.name.trim()).toLowerCase());
+      if (accountId) {
+        return { ...entry, accountId };
+      }
+    }
+    return entry;
+  });
+
+  return { processedEntries, newAccountsCreated };
+}
+// --- END: Auto-account creation and linking logic ---
+
 
 // --- Day Book Functions ---
 
@@ -56,83 +135,36 @@ export async function saveRecord(record: DayBookRecord): Promise<void> {
   formattedRecord.payments.cashDeposits = (formattedRecord.payments.cashDeposits || []).map(d => ({ ...d, description: toTitleCase(d.description) }));
   // --- END: Apply Capitalization ---
 
-  // --- START: Auto-account creation and linking logic ---
-  try {
-    const salesToProcess = [
-      ...(formattedRecord.deductions.creditSales || []),
-      ...(formattedRecord.deductions.sales0332 || []),
-      ...(formattedRecord.deductions.sviSales || []),
-      ...(formattedRecord.cashTransactions || []),
-    ];
+  const salesToProcess = [
+    ...(formattedRecord.deductions.creditSales || []),
+    ...(formattedRecord.deductions.sales0332 || []),
+    ...(formattedRecord.deductions.sviSales || []),
+    ...(formattedRecord.cashTransactions || []),
+  ];
 
-    const namesToLink = new Set<string>();
-    salesToProcess.forEach(sale => {
-      if (sale.name && !sale.accountId) {
-        namesToLink.add(sale.name.trim());
-      }
-    });
+  const { processedEntries } = await linkAccountIdsForEntries(salesToProcess, userId);
+  
+  // Re-distribute the processed entries back to the record
+  formattedRecord.deductions.creditSales = [];
+  formattedRecord.deductions.sales0332 = [];
+  formattedRecord.deductions.sviSales = [];
+  formattedRecord.cashTransactions = [];
 
-    if (namesToLink.size > 0) {
-      const { data: existingAccounts, error: fetchError } = await supabase
-        .from('accounts')
-        .select('id, name')
-        .eq('user_id', userId);
-
-      if (fetchError) {
-        console.error("Auto-linking failed: Could not fetch existing accounts.", fetchError);
-      } else {
-        const existingAccountMap = new Map(
-          (existingAccounts || []).map(acc => [acc.name.trim().toLowerCase(), acc.id])
-        );
-
-        const newAccountNames: string[] = [];
-        for (const name of namesToLink) {
-          if (!existingAccountMap.has(name.toLowerCase())) {
-            newAccountNames.push(name);
-          }
+  processedEntries.forEach((entry: any) => {
+    if (entry.type === 'in' || entry.type === 'out') {
+        formattedRecord.cashTransactions.push(entry);
+    } else {
+        const saleNameLower = entry.name.toLowerCase().trim();
+        if (saleNameLower === 'svi') {
+            formattedRecord.deductions.sviSales.push(entry);
+        } else if (saleNameLower === 'svi 0332') {
+            formattedRecord.deductions.sales0332.push(entry);
+        } else {
+            formattedRecord.deductions.creditSales.push(entry);
         }
-        
-        if (newAccountNames.length > 0) {
-          const accountsToInsert = newAccountNames.map(name => ({
-            name, // Name is already title-cased
-            type: 'factory' as 'factory' | 'transporter',
-            user_id: userId,
-          }));
-
-          const { data: createdAccounts, error: createError } = await supabase
-            .from('accounts')
-            .insert(accountsToInsert)
-            .select('id, name');
-
-          if (createError) {
-            console.error("Failed to auto-create new accounts:", createError);
-          } else if (createdAccounts) {
-            createdAccounts.forEach(acc => {
-              existingAccountMap.set(acc.name.trim().toLowerCase(), acc.id);
-            });
-          }
-        }
-
-        const linkAccountId = (sale: any): any => {
-          if (sale.name && !sale.accountId) {
-            const accountId = existingAccountMap.get(sale.name.trim().toLowerCase());
-            if (accountId) {
-              return { ...sale, accountId };
-            }
-          }
-          return sale;
-        };
-
-        formattedRecord.deductions.creditSales = (formattedRecord.deductions.creditSales || []).map(linkAccountId);
-        formattedRecord.deductions.sales0332 = (formattedRecord.deductions.sales0332 || []).map(linkAccountId);
-        formattedRecord.deductions.sviSales = (formattedRecord.deductions.sviSales || []).map(linkAccountId);
-        formattedRecord.cashTransactions = (formattedRecord.cashTransactions || []).map(linkAccountId);
-      }
     }
-  } catch (e) {
-    console.error("An unexpected error occurred during auto-account creation logic:", e);
-  }
-  // --- END: Auto-account creation and linking logic ---
+  });
+
 
   const { error } = await supabase
     .from('day_book_records')
@@ -419,6 +451,18 @@ export async function getTransactionsForAccount(accountId: string): Promise<Tran
     const userId = await getUserId();
     const allTransactions: Transaction[] = [];
 
+    // Fetch sent receipts for this account
+    const { data: sentReceiptsData, error: sentReceiptsError } = await supabase
+        .from('sent_receipts')
+        .select('transaction_id')
+        .eq('user_id', userId)
+        .eq('account_id', accountId);
+    
+    if (sentReceiptsError) {
+        console.error("Could not fetch sent receipts status:", sentReceiptsError);
+    }
+    const sentTxIds = new Set((sentReceiptsData || []).map(r => r.transaction_id));
+
     // 1. Fetch Balance Entries
     const { data: balanceEntries, error: balanceError } = await supabase
         .from('balance_entries')
@@ -427,7 +471,7 @@ export async function getTransactionsForAccount(accountId: string): Promise<Tran
         .eq('account_id', accountId);
     if (balanceError) throw balanceError;
     if (balanceEntries) {
-        allTransactions.push(...balanceEntries.map(be => ({ ...be, id: `be:${be.id}` })));
+        allTransactions.push(...balanceEntries.map(be => ({ ...be, id: `be:${be.id}`, isSent: sentTxIds.has(`be:${be.id}`) })));
     }
 
     // 2. Fetch Payments Received
@@ -439,9 +483,10 @@ export async function getTransactionsForAccount(accountId: string): Promise<Tran
     if (paymentsError) throw paymentsError;
     if (paymentsReceived) {
         allTransactions.push(...paymentsReceived.map(pr => {
+            const id = `pr:${pr.id}`;
             const isPaytm = pr.accounts?.name.toLowerCase() === 'paytm';
             return {
-                id: `pr:${pr.id}`,
+                id,
                 date: pr.date,
                 description: pr.description || `Payment Received`,
                 type: 'credit',
@@ -449,6 +494,7 @@ export async function getTransactionsForAccount(accountId: string): Promise<Tran
                 receiptNumber: isPaytm ? undefined : (pr.receipt_number || undefined),
                 transactionId: isPaytm ? (pr.receipt_number || undefined) : undefined,
                 paymentMethod: pr.payment_method || undefined,
+                isSent: sentTxIds.has(id),
             };
         }));
     }
@@ -467,14 +513,16 @@ export async function getTransactionsForAccount(accountId: string): Promise<Tran
             const processSales = (sales: (CreditSale | Sale0332 | SviSale)[], type: string, prefix: string) => {
                 (sales || []).forEach(sale => {
                     if (sale.accountId === accountId) {
+                        const id = `${prefix}:${dbr.date}:${sale.id}`;
                         allTransactions.push({
-                            id: `${prefix}:${dbr.date}:${sale.id}`,
+                            id,
                             date: dbr.date,
                             description: type,
                             type: 'debit',
                             amount: sale.amount,
                             receiptNumber: sale.receiptNumber || undefined,
                             vehicleNumber: sale.vehicleNumber || undefined,
+                            isSent: sentTxIds.has(id),
                         });
                     }
                 });
@@ -487,15 +535,47 @@ export async function getTransactionsForAccount(accountId: string): Promise<Tran
             (record.cashTransactions || []).forEach(trans => {
                 if (trans.accountId === accountId) {
                     const prefix = `ct_${trans.type}`;
+                    const id = `${prefix}:${dbr.date}:${trans.id}`;
                     allTransactions.push({
-                        id: `${prefix}:${dbr.date}:${trans.id}`,
+                        id,
                         date: dbr.date,
                         description: `Cash ${trans.type === 'in' ? 'Received' : 'Given'}${trans.comment ? `: ${trans.comment}` : ''}`,
                         type: trans.type === 'in' ? 'credit' : 'debit',
                         amount: trans.amount,
+                        isSent: sentTxIds.has(id),
                     });
                 }
             });
+        });
+    }
+
+    // 4. Fetch Daily Records for 0332 Sales
+    const { data: dailyRecords, error: dailyRecordsError } = await supabase
+        .from('daily_records')
+        .select('date, sales_0332_breakdown')
+        .eq('user_id', userId);
+        
+    if (dailyRecordsError) {
+        console.error("Error fetching daily records for ledger:", dailyRecordsError);
+    } else if (dailyRecords) {
+        dailyRecords.forEach(dr => {
+            const breakdown = dr.sales_0332_breakdown as Sale0332BreakdownEntry[] | null;
+            if (breakdown && Array.isArray(breakdown)) {
+                breakdown.forEach(entry => {
+                    if (entry.accountId === accountId) {
+                        const id = `vs0332:${dr.date}:${entry.id}`;
+                        allTransactions.push({
+                            id,
+                            date: dr.date,
+                            description: '0332 Vehicle Sale',
+                            type: 'debit',
+                            amount: entry.amount,
+                            vehicleNumber: '0332',
+                            isSent: sentTxIds.has(id),
+                        });
+                    }
+                });
+            }
         });
     }
 
@@ -610,6 +690,33 @@ export async function deleteStockOrder(orderId: string): Promise<void> {
     if (error) throw error;
 }
 
+// --- Stock Report Functions ---
+export async function getLatestStockReport(): Promise<StockReport | null> {
+    const userId = await getUserId();
+    const { data, error } = await supabase
+        .from('stock_reports')
+        .select('*')
+        .eq('user_id', userId)
+        .order('end_date', { ascending: false })
+        .limit(1)
+        .single();
+    
+    if (error && error.code !== 'PGRST116') {
+        console.error('Error fetching latest stock report:', error);
+        throw error;
+    }
+    return data ? (data as StockReport) : null;
+}
+
+export async function saveStockReport(report: StockReport): Promise<void> {
+    const userId = await getUserId();
+    const { error } = await supabase.from('stock_reports').upsert({ ...report, user_id: userId });
+    if (error) {
+        console.error('Error saving stock report:', error);
+        throw error;
+    }
+}
+
 
 // --- Analytics Functions ---
 export async function getMonthlyFuelSales() {
@@ -677,8 +784,30 @@ export async function getDailyRecord(date: string): Promise<DailyRecord | null> 
     return {
         ...data,
         bankReconciliation: (data.bank_reconciliation as any) || [],
+        sales0332Breakdown: (data.sales_0332_breakdown as any) || [],
         paymentsReceived: mappedPayments,
     };
+}
+
+export async function getDailyRecordsForDateRange(startDate: string, endDate: string): Promise<DailyRecord[]> {
+    const userId = await getUserId();
+    const { data, error } = await supabase
+        .from('daily_records')
+        .select('*')
+        .eq('user_id', userId)
+        .gte('date', startDate)
+        .lte('date', endDate);
+    
+    if (error) {
+        console.error('Error fetching daily records for date range:', error);
+        throw error;
+    }
+    return (data || []).map(dr => ({
+        ...dr,
+        bankReconciliation: (dr.bank_reconciliation as any) || [],
+        sales0332Breakdown: (dr.sales_0332_breakdown as any) || [],
+        paymentsReceived: [], // Not hydrated for this specific report to keep it fast
+    }));
 }
 
 export async function getAllDailyRecords(): Promise<DailyRecord[]> {
@@ -695,6 +824,7 @@ export async function getAllDailyRecords(): Promise<DailyRecord[]> {
     return (data || []).map(dr => ({
         ...dr,
         bankReconciliation: (dr.bank_reconciliation as any) || [],
+        sales0332Breakdown: (dr.sales_0332_breakdown as any) || [],
         paymentsReceived: [], // This is simplified; full fetch is complex here
     }));
 }
@@ -702,6 +832,12 @@ export async function getAllDailyRecords(): Promise<DailyRecord[]> {
 export async function saveDailyRecord(record: DailyRecord): Promise<void> {
     const userId = await getUserId();
     const { paymentsReceived, ...recordToSave } = record; // Exclude paymentsReceived
+
+    // New logic for account creation from 0332 breakdown
+    if (recordToSave.sales0332Breakdown && recordToSave.sales0332Breakdown.length > 0) {
+        const { processedEntries } = await linkAccountIdsForEntries(recordToSave.sales0332Breakdown, userId);
+        recordToSave.sales0332Breakdown = processedEntries;
+    }
     
     const { error } = await supabase
         .from('daily_records')
@@ -709,6 +845,7 @@ export async function saveDailyRecord(record: DailyRecord): Promise<void> {
             date: recordToSave.date,
             user_id: userId,
             bank_reconciliation: recordToSave.bankReconciliation as any,
+            sales_0332_breakdown: recordToSave.sales0332Breakdown as any,
             updated_at: new Date().toISOString(),
         }, { onConflict: 'date, user_id' });
 
@@ -840,4 +977,19 @@ export async function getOrCreateSystemAccount(name: string): Promise<Account> {
     createdAt: newAccount.created_at,
     balanceEntries: [],
   } as Account;
+}
+
+// --- Follow Up Functions ---
+export async function markReceiptsAsSent(receipts: { transaction_id: string; account_id: string; receipt_number: string | null; amount: number; transaction_date: string }[]): Promise<void> {
+    const userId = await getUserId();
+    const receiptsToInsert = receipts.map(r => ({ ...r, user_id: userId }));
+    
+    const { error } = await supabase
+        .from('sent_receipts')
+        .insert(receiptsToInsert, { onConflict: 'user_id, transaction_id' });
+
+    if (error) {
+        console.error('Error marking receipts as sent:', error);
+        throw error;
+    }
 }

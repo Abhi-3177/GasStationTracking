@@ -36,6 +36,14 @@ export default function ReportsLayout() {
           headerShadowVisible: false,
         }} 
       />
+      <Stack.Screen 
+        name="vehicle-0332-report" 
+        options={{ 
+          title: 'Vehicle 0332 Report',
+          headerTitleStyle: { fontWeight: '700' },
+          headerShadowVisible: false,
+        }} 
+      />
     </Stack>
   );
 }

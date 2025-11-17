@@ -27,21 +27,30 @@ export function SummaryCard({ totals, cashCollected, onCashCollectedChange }: Su
             <Text style={styles.breakdownValue}>{formatIndianCurrency(safeTotals.netSale)}</Text>
         </View>
         <View style={styles.breakdownRow}>
-            <Text style={styles.breakdownLabel}>- Total Payments</Text>
-            <Text style={styles.breakdownValue}>- {formatIndianCurrency(safeTotals.totalPayments)}</Text>
+            <Text style={styles.breakdownLabel}>Total Payments</Text>
+            <Text style={[styles.breakdownValue, styles.negativeValue]}>- {formatIndianCurrency(safeTotals.totalPayments)}</Text>
         </View>
         <View style={styles.breakdownRow}>
-            <Text style={styles.breakdownLabel}>+ Cash In</Text>
-            <Text style={styles.breakdownValue}>+ {formatIndianCurrency(safeTotals.totalCashIn)}</Text>
+            <Text style={styles.breakdownLabel}>Cash In</Text>
+            <Text style={[styles.breakdownValue, styles.positiveValue]}>+ {formatIndianCurrency(safeTotals.totalCashIn)}</Text>
         </View>
         <View style={styles.breakdownRow}>
-            <Text style={styles.breakdownLabel}>- Cash Out</Text>
-            <Text style={styles.breakdownValue}>- {formatIndianCurrency(safeTotals.totalCashOut)}</Text>
+            <Text style={styles.breakdownLabel}>Cash Out</Text>
+            <Text style={[styles.breakdownValue, styles.negativeValue]}>- {formatIndianCurrency(safeTotals.totalCashOut)}</Text>
         </View>
-        <View style={styles.breakdownRow}>
-            <Text style={styles.breakdownLabel}>+ Cash from Last Day</Text>
-            <Text style={styles.breakdownValue}>+ {formatIndianCurrency(safeTotals.previousDayBalance)}</Text>
-        </View>
+        
+        {safeTotals.previousDayBalance !== 0 && (
+            <View style={styles.breakdownRow}>
+                <Text style={styles.breakdownLabel}>Cash from Last Day</Text>
+                <Text style={[
+                    styles.breakdownValue,
+                    safeTotals.previousDayBalance > 0 ? styles.positiveValue : styles.negativeValue
+                ]}>
+                    {safeTotals.previousDayBalance >= 0 ? '+ ' : '- '}
+                    {formatIndianCurrency(Math.abs(safeTotals.previousDayBalance))}
+                </Text>
+            </View>
+        )}
       </View>
 
       <View style={styles.dayBalanceItem}>
@@ -100,6 +109,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     color: '#1f2937',
+  },
+  positiveValue: {
+    color: '#059669',
+  },
+  negativeValue: {
+    color: '#dc2626',
   },
   dayBalanceItem: {
     width: '100%',

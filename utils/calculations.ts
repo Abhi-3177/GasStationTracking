@@ -1,6 +1,9 @@
 import { DayBookRecord, CalculatedTotals } from '../types/daybook';
 
-export function calculateTotals(record: DayBookRecord, previousRecord: DayBookRecord | null): CalculatedTotals {
+export function calculateTotals(
+  record: DayBookRecord, 
+  carryForward: number
+): CalculatedTotals {
   const pLitres = (record?.machines?.petrol || []).reduce(
     (total, machine) => total + Math.max(0, (machine?.closingReading || 0) - (machine?.openingReading || 0)),
     0
@@ -47,16 +50,13 @@ export function calculateTotals(record: DayBookRecord, previousRecord: DayBookRe
     (record?.payments?.phonePeSale || 0) + 
     (record?.payments?.paytmSale || 0) + 
     (record?.payments?.directPnbTransfer || 0) +
-    (record?.payments?.ioclCardSale || 0) + // New field
+    (record?.payments?.ioclCardSale || 0) +
     totalCashDeposits;
 
   const totalCashIn = (record?.cashTransactions || []).reduce((total, trans) => total + (trans?.type === 'in' ? (trans?.amount || 0) : 0), 0);
   const totalCashOut = (record?.cashTransactions || []).reduce((total, trans) => total + (trans?.type === 'out' ? (trans?.amount || 0) : 0), 0);
-
-  const previousDayBalance = 
-    previousRecord && !previousRecord.cashCollected 
-      ? calculateTotals(previousRecord, null).dayBalance 
-      : 0;
+  
+  const previousDayBalance = carryForward;
 
   const dayBalance = netSale - totalPayments + totalCashIn - totalCashOut + previousDayBalance;
 

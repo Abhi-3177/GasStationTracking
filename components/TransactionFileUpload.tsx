@@ -149,13 +149,26 @@ export function TransactionFileUpload() {
             successCount++;
             importedDates.add(payment.date);
           } catch(e: any) {
-            if (e.message?.includes('duplicate key')) {
+            let reason = 'An unknown error occurred';
+            
+            // Check for unique constraint violation first
+            if (e.message?.includes('duplicate key') || e.code === '23505' || e.message?.includes('already been used')) {
                 duplicateCount++;
-            } else {
-                const reason = 'Failed to Save (Network/DB Issue)';
-                if (!errors[reason]) errors[reason] = [];
-                errors[reason].push(rowNum);
+                continue; // Skip adding to errors list, as this is expected behavior
+            } 
+            // Check for RLS violation
+            else if (e.message?.includes('row-level security')) {
+                reason = 'Row-Level Security Policy Violation';
             }
+            // Fallback to the actual Supabase message if available
+            else {
+                reason = e.message || 'Failed to save row.';
+            }
+
+            if (!errors[reason]) {
+                errors[reason] = [];
+            }
+            errors[reason].push(rowNum);
           }
         }
       }

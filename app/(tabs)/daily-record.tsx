@@ -11,12 +11,15 @@ import { DayBookSummary } from '@/components/DayBookSummary';
 import { PaymentsReceived } from '@/components/PaymentsReceived';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { CashInHandSummary } from '@/components/CashInHandSummary';
+import { SaleByVehicle0332 } from '@/components/SaleByVehicle0332';
 
-import { DayBookRecord, DailyRecord, Account, BankReconciliationEntry, PaymentReceived } from '@/types/daybook';
+import { DayBookRecord, DailyRecord, Account, BankReconciliationEntry, PaymentReceived, Sale0332BreakdownEntry } from '@/types/daybook';
 import { getRecord, getPreviousRecord, getAllAccounts, getDailyRecord, saveDailyRecord, addPaymentReceived, updatePaymentReceived, deletePaymentReceived } from '@/utils/database';
 import { useAuth } from '@/context/AuthContext';
 import { useData } from '@/context/DataContext';
 import { useNotification } from '@/context/NotificationContext';
+import { supabase } from '@/lib/supabase';
+import { calculateTotals } from '@/utils/calculations';
 
 const createNewDailyRecord = (date: string, userId: string, prevDayBook: DayBookRecord | null): DailyRecord => {
   const prevCashDepositTotal = prevDayBook?.payments.cashDeposits?.reduce((sum, entry) => sum + entry.amount, 0) || 0;
@@ -43,6 +46,7 @@ const createNewDailyRecord = (date: string, userId: string, prevDayBook: DayBook
     user_id: userId,
     bankReconciliation,
     paymentsReceived: [],
+    sales0332Breakdown: [],
   };
 };
 
@@ -55,9 +59,9 @@ export default function DailyRecordScreen() {
   const [isSaving, setIsSaving] = useState(false);
   
   const [dayBookRecord, setDayBookRecord] = useState<DayBookRecord | null>(null);
-  const [previousDayBookRecord, setPreviousDayBookRecord] = useState<DayBookRecord | null>(null);
   const [dailyRecord, setDailyRecord] = useState<DailyRecord | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [carryForward, setCarryForward] = useState(0);
 
   const loadData = useCallback(async () => {
     if (!user?.id) return;
@@ -66,6 +70,28 @@ export default function DailyRecordScreen() {
     const dateKey = format(selectedDate, 'yyyy-MM-dd');
     
     try {
+      const { data: recordsForCarryForward, error: rpcError } = await supabase.rpc('get_records_for_carry_forward', {
+        p_target_date: dateKey,
+      });
+
+      if (rpcError) {
+        throw new Error(`Failed to calculate carry-forward balance: ${rpcError.message}`);
+      }
+      
+      let runningBalance = 0;
+      if (recordsForCarryForward && recordsForCarryForward.length > 0) {
+        for (const rec of recordsForCarryForward) {
+          const dayBookData = rec.record as DayBookRecord;
+          if (dayBookData.cashCollected) {
+            runningBalance = 0;
+          } else {
+            const totalsForDay = calculateTotals(dayBookData, runningBalance);
+            runningBalance = totalsForDay.dayBalance;
+          }
+        }
+      }
+      setCarryForward(runningBalance);
+
       const [dbRecord, prevDbRecord, existingDailyRecord, allAccounts] = await Promise.all([
         getRecord(dateKey),
         getPreviousRecord(dateKey),
@@ -74,7 +100,6 @@ export default function DailyRecordScreen() {
       ]);
 
       setDayBookRecord(dbRecord);
-      setPreviousDayBookRecord(prevDbRecord);
       setAccounts(allAccounts);
       
       const newRecordTemplate = createNewDailyRecord(dateKey, user.id, prevDbRecord);
@@ -86,7 +111,11 @@ export default function DailyRecordScreen() {
             actual: actualsMap.get(entry.type) || 0,
             matched: Math.abs((actualsMap.get(entry.type) || 0) - entry.expected) <= 1,
         }));
-        setDailyRecord({ ...existingDailyRecord, bankReconciliation: mergedReconciliation });
+        setDailyRecord({ 
+            ...existingDailyRecord, 
+            bankReconciliation: mergedReconciliation,
+            sales0332Breakdown: existingDailyRecord.sales0332Breakdown || [],
+        });
       } else {
         setDailyRecord(newRecordTemplate);
       }
@@ -109,10 +138,25 @@ export default function DailyRecordScreen() {
     loadData();
   }, [dataVersion]);
 
-  const handleUpdateReconciliation = (updatedReconciliation: BankReconciliationEntry[]) => {
+  const handleUpdateReconciliation = async (updatedReconciliation: BankReconciliationEntry[]) => {
     if (!dailyRecord) return;
-    // Only update the local state. Do not save to DB here.
     setDailyRecord(prev => prev ? { ...prev, bankReconciliation: updatedReconciliation } : null);
+  };
+  
+  const handleUpdate0332Breakdown = async (breakdown: Sale0332BreakdownEntry[]) => {
+    if (!dailyRecord) return;
+
+    const updatedRecord = { ...dailyRecord, sales0332Breakdown: breakdown };
+    setDailyRecord(updatedRecord); // Optimistic UI update
+
+    try {
+        await saveDailyRecord(updatedRecord);
+        showNotification('0332 sales breakdown has been saved.', 'success');
+    } catch (error: any) {
+        console.error('Error saving 0332 sales breakdown:', error);
+        showNotification(error.message || 'Failed to save the breakdown.', 'error');
+        // Optional: Revert state or prompt user to retry
+    }
   };
 
   const handleAddPayment = async (payment: Omit<PaymentReceived, 'id' | 'user_id' | 'created_at'>) => {
@@ -182,10 +226,16 @@ export default function DailyRecordScreen() {
                 bankReconciliation={dailyRecord.bankReconciliation}
                 onUpdate={handleUpdateReconciliation}
               />
+              
+              <SaleByVehicle0332
+                dayBookRecord={dayBookRecord}
+                dailyRecord={dailyRecord}
+                accounts={accounts}
+                onUpdateBreakdown={handleUpdate0332Breakdown}
+              />
 
               <DayBookSummary 
                 dayBookRecord={dayBookRecord} 
-                previousDayBookRecord={previousDayBookRecord}
               />
 
               <PaymentsReceived
@@ -199,8 +249,8 @@ export default function DailyRecordScreen() {
 
               <CashInHandSummary 
                 dayBookRecord={dayBookRecord}
-                previousDayBookRecord={previousDayBookRecord}
                 dailyRecord={dailyRecord}
+                carryForward={carryForward}
               />
 
               <TouchableOpacity style={[styles.saveButton, isSaving && styles.saveButtonDisabled]} onPress={handleSave} disabled={isSaving}>
